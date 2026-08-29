@@ -48,6 +48,18 @@ MARKER_RUN = Path(
 # be tuned against `curl -s localhost:8092/props`, not against the model card.
 REGEX_ENDPOINT = os.environ.get("WORKBENCH_REGEX_ENDPOINT", "http://127.0.0.1:8092")
 
+# The redaction tool's recall layer: openai/privacy-filter as ONNX, on the CPU, in this
+# process. NOT a llama-server unit and not on the GPU -- 50M active parameters answer in
+# one forward pass, so it owes nothing to the queue the other three ports share, and it
+# is the only model in this repo that does not contend for the GPU.
+#
+# Downloaded by scripts/fetch-privacy-filter.sh; deliberately NOT in halo-prep's
+# config/models.conf, which is a manifest of llama-server units and model-switch.sh
+# groups. This is neither.
+PII_MODEL_DIR = Path(
+    os.environ.get("WORKBENCH_PII_MODEL_DIR", Path.home() / "models/privacy-filter")
+)
+
 # :8088 is Ornith-1.5-35B-A3B, Open Notebook's worker -- prose, and deliberately NOT
 # given the terse splice, since terseness is a defect in prose output.
 #

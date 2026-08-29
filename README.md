@@ -9,17 +9,18 @@ verifier that runs on every request:
 | Tool | Does | Verified by |
 |---|---|---|
 | **marker** | upload a PDF, get markdown back | marker's own checksummed provenance sidecar |
-| **redact** | strip PII from a document (markdown or true-redacted PDF) | re-extract the output — `pdftotext` included — and search it for every span removed |
+| **redact** | strip PII from markdown, text or PDF (true redaction, not black boxes) | re-extract the output — `pdftotext` included — and search it for every span removed |
 | **regex** | give examples, get a regex | your examples, actually executed against the pattern |
 | **translate** | zh↔en translate/paraphrase, protecting spans you mark | protected spans round-trip byte-identical; residual-script check |
 
-**Status: phase 3.** The job queue and the marker tool work and the service is
-installed and enabled; redact, regex and translate are not started. `PLAN.md` is the build plan; `CLAUDE.md` is the decisions.
+**Status: phase 4.** Job queue, marker and assisted redaction work; the service is
+installed and reachable on the tailnet. Regex and translate are not started. `PLAN.md` is the build plan; `CLAUDE.md` is the decisions.
 
 ## Run it (development)
 
 ```bash
 scripts/bootstrap.sh      # create ~/venvs/workbench
+scripts/fetch-privacy-filter.sh   # ~920 MB, the redaction recall layer (CPU, ONNX)
 scripts/dev.sh            # uvicorn on :8093 with --reload
 curl -s localhost:8093/healthz
 ```
@@ -29,6 +30,7 @@ Then `http://localhost:8093/marker` to convert a PDF. Acceptance tests:
 ```bash
 tests/phase1_acceptance.sh    # the queue: serialisation, and kill -9 recovery
 tests/phase2_acceptance.sh    # marker: what the sidecar verifier refuses (no GPU needed)
+tests/phase4_acceptance.sh    # redact: patterns, the verifier, and pdftotext on the output
 ```
 
 ## Run it (resident) — installed 2026-08-29

@@ -1,0 +1,44 @@
+{% extends "base.html" %}
+{% block title %}redact — halo-workbench{% endblock %}
+{% block heading %} <span class="muted">/ redact</span>{% endblock %}
+{% block body %}
+<p>Upload a document, review what was found, and download a
+<strong>redaction candidate</strong>.</p>
+
+<p class="warn">This tool proves that everything it <em>found</em> was removed. Nothing
+can prove nothing was missed — recall is not verifiable. Read the output before you
+send it anywhere. That is why the file you get is called a candidate.</p>
+
+<form class="card" method="post" enctype="multipart/form-data" action="/redact">
+  <p><input type="file" name="file" accept=".pdf,.md,.txt,.markdown,text/*" required></p>
+  <p><label>Your own terms to remove — names, employers, case numbers, one per line.
+     These are matched literally.<br>
+     <textarea name="terms" rows="4" cols="46" placeholder="Anna Meyer&#10;Acme Holdings"></textarea></label></p>
+  <p><button type="submit">Scan for candidates</button>
+     {% if queued %}<span class="muted">{{ queued }} job(s) ahead of you</span>{% endif %}</p>
+</form>
+
+<p class="muted">Markdown, plain text and PDFs. Candidates come from exact patterns
+(emails, phones, account numbers, IBANs, ID numbers, dates, addresses, URLs), from your
+own list above, and from a PII tagger that runs on the CPU here — so a name or an
+employer gets found too. Everything is a proposal until you tick it.</p>
+
+<p class="muted">PDFs are redacted by deleting the content, never by drawing over it —
+and the check is <code>pdftotext</code> on the file you download. A scanned PDF has no
+text layer to search, so it is refused rather than returned looking finished; convert
+it with <a href="/marker">marker</a> first.</p>
+
+{% if jobs %}
+<h2>Recent</h2>
+<table>
+  {% for job in jobs %}
+  <tr>
+    <td><a href="/redact/{{ job.id }}">{{ job.meta.input_filename or job.id }}</a></td>
+    <td class="muted">{{ "scan" if job.tool == "redact-scan" else "apply" }}</td>
+    <td><span class="status {{ job.status }}">{{ job.status }}</span></td>
+    <td class="muted">{{ job.meta.created_at }}</td>
+  </tr>
+  {% endfor %}
+</table>
+{% endif %}
+{% endblock %}

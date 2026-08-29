@@ -11,7 +11,7 @@ from fastapi import FastAPI
 from fastapi.responses import HTMLResponse
 
 from app import config, jobs
-from app.tools import marker
+from app.tools import marker, redact
 
 
 @asynccontextmanager
@@ -44,6 +44,7 @@ app = FastAPI(title="halo-workbench", docs_url=None, redoc_url=None, lifespan=li
 # One router per tool, so a tool's routes, its job handler and its verifier stay in
 # one file. Importing the module is also what registers its handler with app.jobs.
 app.include_router(marker.router)
+app.include_router(redact.router)
 
 
 @app.get("/healthz")
@@ -76,7 +77,8 @@ def index() -> str:
 <p>Specialist tools on the EVO-X3. Each one ships a verifier that runs on every request.</p>
 <ul>
   <li><a href="/marker">PDF &rarr; markdown (marker)</a></li>
-  <li class="todo">Regex from examples &mdash; PLAN.md phase 4</li>
+  <li><a href="/redact">Assisted redaction &mdash; candidates, reviewed by you</a></li>
+  <li class="todo">Regex from examples &mdash; PLAN.md phase 5</li>
   <li class="todo">Translate with protected spans &mdash; PLAN.md phase 5</li>
 </ul>
 """

@@ -202,7 +202,7 @@ afterwards).
 Do phases 1–3 and stop. Get real use out of marker before building anything else —
 if the other three never get built, the project has already paid for itself.
 
-## Phase 4 — the redaction tool
+## Phase 4 — the redaction tool ✅ DONE 2026-08-29
 
 Added on the operator's request 2026-08-29. Ordered before regex and translate
 because it composes with marker (redact what you just converted) and because the box
@@ -223,8 +223,26 @@ confidence.
   phone numbers, IBANs/account numbers, ID numbers, URLs, dates, postal addresses,
   plus a user-supplied literal/regex list (names, employers, case numbers). This layer
   is exact, testable offline, and needs no GPU.
-- **The model is a recall booster over that layer, never a replacement.** Ask `:8092`
-  to propose *additional* spans — names, org names, oblique identifiers ("my
+- **The model is a recall booster over that layer, never a replacement.** ~~Ask
+  `:8092`~~ **Changed 2026-08-29, on the operator's suggestion: the recall layer is
+  `openai/privacy-filter`**, a token classifier run as q4 ONNX on the **CPU** in this
+  process (`app/pii_tagger.py`, `scripts/fetch-privacy-filter.sh`, ~920 MB, Apache-2.0).
+  It labels a sequence in one forward pass and decodes BIOES spans over eight privacy
+  categories, so it does not queue behind the three GPU units at all.
+
+  Why the change, measured on the same 1 KB letter: `:8092` is a **thinking** model, and
+  with an 800-token budget it spent the lot in `reasoning_content` and returned an
+  **empty `content`** after 138.9 s — the first scan through the app got zero proposals,
+  silently. With `enable_thinking: false` it answered in 2.4 s and named all four people
+  (a measured counter-example to halo-prep pitfall #25 for extraction tasks; recorded
+  there). `privacy-filter` takes 5.7 s on CPU and finds the same names *plus* the
+  structured identifiers, with categories.
+
+  `:8092` with thinking off remains the fallback when the weights are not installed, and
+  which layer ran is stated on the page — a recall layer that silently did not run would
+  be exactly the false confidence this tool is built to avoid.
+
+  Whichever layer runs, the rule is unchanged: propose *additional* spans — names, org names, oblique identifiers ("my
   daughter's school") that no pattern catches. Every proposal must be located in the
   source by exact string match; a proposed span that does not literally occur is
   discarded, not fuzzy-matched. That single rule removes hallucinated spans entirely.
@@ -287,6 +305,19 @@ every check below.
   loudly instead of being skipped.
 - A scanned image-only PDF is refused or OCR-routed, never silently returned unchanged.
 - Output PDF metadata (`/Info`, XMP) contains none of the redacted strings.
+
+All of these pass, scripted in `tests/phase4_acceptance.sh` (no GPU, no running app —
+the tagger section skips itself if the weights are absent). Verified end to end through
+the resident service on 2026-08-29, markdown and PDF: `pdftotext` on the *downloaded*
+PDF finds none of "Anna Meyer", "Johannes", "Thandiwe", the email, the account number,
+the phone or the IBAN, and its `/Info` — which carried the author's name, a title
+naming the recipient and a subject containing the account number — comes back empty.
+
+Two notes from real use. The tagger returns a multi-line address as one span; those are
+split per line, because a span crossing a line break is precisely what the PDF path
+cannot locate and would (correctly) fail the whole job over. And it proposed the literal
+word `IBAN` as an account number — a harmless false positive that costs one untick,
+which is the trade the whole design makes on purpose.
 
 ## Phase 5 — the regex tool
 

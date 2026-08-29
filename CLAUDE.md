@@ -81,6 +81,15 @@ curl -s localhost:8092/props                             # tune prompts against 
   its verifier together. `marker.py` is the pattern: `@jobs.register("marker")` for the
   work, an `APIRouter` for the pages, and `verify()` re-run at download time so a `.md`
   edited after conversion stops being downloadable.
+- `app/redaction.py` — the redaction tool's pure half: patterns, the verbatim rule for
+  model proposals, removal, and `survivors()`, the verifier. No FastAPI, no network, so
+  it is exercised without a GPU.
+- `app/pdf_redaction.py` — PyMuPDF. Deletes content, never draws over it, and refuses
+  to return a file its own re-read still finds a span in.
+- `app/pii_tagger.py` — the recall layer: `openai/privacy-filter` as q4 ONNX on the
+  **CPU**, so it is the one model here that does not contend for the GPU. It proposes;
+  it never decides. `:8092` with `enable_thinking: false` is the fallback, and the page
+  always says which one ran.
 - `app/views.py`, `app/templates/` — the shared Jinja environment and the pages.
 - `app/jobs.py` — the job store and the one worker thread. Tools register a handler
   with `@jobs.register("name")`; it either returns (`done`) or raises (`failed`).
@@ -107,7 +116,7 @@ The four verifiers, concretely:
 | Tool | Verifier |
 |---|---|
 | marker | the `.marker-ok` provenance sidecar, checksum-matched against the `.md` |
-| redact | re-extract the output text and confirm no removed span survives it |
+| redact | re-extract the output text — `pdftotext` included — and confirm no removed span survives it |
 | regex | the user's own positive/negative examples, executed |
 | translate | protected spans present once and in order, plus a residual-script check |
 
