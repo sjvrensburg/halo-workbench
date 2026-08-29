@@ -1,5 +1,16 @@
 # halo-workbench
 
+[![every tool ships a verifier](https://img.shields.io/badge/every_tool-ships_a_verifier-2f6f5b)](CLAUDE.md#the-rule-the-whole-project-is-organised-around)
+[![status](https://img.shields.io/badge/status-four_tools_live-2f6f5b)](PLAN.md)
+[![runs on](https://img.shields.io/badge/runs_on-EVO--X3_·_Strix_Halo-5a5750)](https://github.com/sjvrensburg/halo-prep)
+[![python](https://img.shields.io/badge/python-3.14_+_FastAPI-5a5750)](scripts/bootstrap.sh)
+[![access](https://img.shields.io/badge/access-tailnet_only-5a5750)](README.md#run-it-resident--installed-2026-08-29)
+
+<!-- Static badges on purpose. This repo is private, so shields.io's dynamic ones
+     (last-commit, build status, license) render "repo not found" for everyone who can
+     read it -- checked 2026-08-29, they answer 200 with that text inside the SVG. A
+     badge that reports a false failure is worse than no badge. -->
+
 Specialist local-model tools for the EVO-X3, in a browser, over Tailscale.
 
 Not a coding assistant. This box is good at narrow tasks that come with a cheap
