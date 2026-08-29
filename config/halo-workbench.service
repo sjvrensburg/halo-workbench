@@ -1,0 +1,33 @@
+# halo-workbench -- specialist local-model tools over Tailscale (:8093).
+#
+#   cp config/halo-workbench.service ~/.config/systemd/user/
+#   systemctl --user daemon-reload && systemctl --user enable --now halo-workbench
+#
+# NOT INSTALLED as of 2026-08-29 -- PLAN.md phase 3 installs it, after the marker
+# tool actually works. Remote access additionally needs, from the operator:
+#   tailscale serve --bg --http=8093 http://127.0.0.1:8093
+# which lives in tailscaled, not in this repo, and will not survive a rebuild.
+
+[Unit]
+Description=halo-workbench — specialist local-model tools (:8093)
+# Not After= the llama units: this app must come up and stay up while a model
+# server is stopped, so it can SAY the model is stopped. A hard dependency would
+# turn "Ornith is down" into "the whole web UI is down".
+
+[Service]
+Type=exec
+WorkingDirectory=/home/stefan/Projects/halo-workbench
+# --host 127.0.0.1: never a routable address. `tailscale serve` proxies to loopback,
+# so a firewall mistake cannot expose this to the LAN.
+#
+# NO --workers. Concurrency is 1 by design (CLAUDE.md): every job here contends for
+# the same GPU as three resident llama-server units, marker spawns ~2.9 GB of its
+# own surya servers on top, and this box has no swap and OOM-kills under pressure
+# (halo-prep pitfall #17). A second worker process would also give each its own
+# in-memory queue, quietly breaking the serialisation the job store depends on.
+ExecStart=/home/stefan/venvs/workbench/bin/uvicorn app.main:app --host 127.0.0.1 --port 8093
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=default.target

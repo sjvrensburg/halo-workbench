@@ -1,0 +1,7 @@
+# Uploaded documents and job state -- the user's real invoices, papers and
+# correspondence. Never commit these; see CLAUDE.md "Privacy".
+*.pdf
+state/
+__pycache__/
+*.pyc
+.venv/
