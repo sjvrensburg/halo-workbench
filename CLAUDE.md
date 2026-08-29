@@ -45,8 +45,10 @@ python-multipart) and `tests/` is empty. Add a dependency by editing that script
 `--force` still reproduces the venv from nothing. The venv is deliberately *not*
 `~/venvs/marker` — see the script's header for why.
 
-Acceptance tests live in `PLAN.md`, one per phase, and are run by hand against the
-running app. That is the intended shape: the checks that matter here are the
+Acceptance tests live in `PLAN.md`, one per phase. Where a phase's criteria are
+about the *process* rather than an output they are scripted — `tests/phase1_acceptance.sh`
+runs the queue's serialisation and `kill -9` recovery against a throwaway state dir —
+otherwise they are run by hand against the running app. That is the intended shape: the checks that matter here are the
 per-request verifiers, not a suite that runs at build time.
 
 The unit is written but **not installed** (PLAN.md phase 3 installs it, after marker
@@ -76,8 +78,10 @@ curl -s localhost:8092/props                             # tune prompts against 
 - `app/main.py` — FastAPI app, currently `/` and `/healthz` only. `/healthz` must
   never touch a model server: it has to stay answerable while `:8092` is mid-turn.
 - `app/tools/` — empty; one module per tool, each pairing its work with its verifier.
-- `app/jobs.py` — does not exist yet; PLAN.md phase 1, and nothing else can be built
-  before it, since marker can take ~20 minutes (halo-prep, 2026-08-23).
+- `app/jobs.py` — the job store and the one worker thread. Tools register a handler
+  with `@jobs.register("name")`; it either returns (`done`) or raises (`failed`).
+  There is no third outcome on purpose — a result the verifier did not pass must
+  raise. Startup reaps `running` jobs as `interrupted` and re-queues `queued` ones.
 - `scripts/`, `config/halo-workbench.service` — the venv, dev server, and unit.
 
 Build order and per-phase acceptance tests are in `PLAN.md`; phase 0 (scaffold) is

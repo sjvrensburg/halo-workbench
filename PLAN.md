@@ -64,7 +64,7 @@ Verified by: `scripts/bootstrap.sh` exits 0, `scripts/dev.sh` serves
 
 ---
 
-## Phase 1 — the job queue
+## Phase 1 — the job queue ✅ DONE 2026-08-29
 
 Nothing else can be built first. Marker takes up to ~20 minutes on a real paper
 (observed in halo-prep, 2026-08-23 — an agent concluded it had stalled at that point
@@ -93,6 +93,11 @@ and it had not), so no tool here can be request/response.
 - Submit three jobs at once; they run one at a time, in order, and all three finish.
 - `kill -9` the service mid-job, restart: that job reads `failed / interrupted`,
   the queued ones still run.
+
+Both are automated in `tests/phase1_acceptance.sh` (throwaway state dir, real
+SIGKILL) and passed on 2026-08-29. Retention was checked separately: an 8-day-old
+job and a meta-less directory are pruned, a fresh job and a stale *queued* job are
+not.
 
 ## Phase 2 — the marker tool  ← ship this first, it is the whole point of the project
 

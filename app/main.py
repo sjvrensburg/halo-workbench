@@ -1,15 +1,34 @@
 """halo-workbench — specialist local-model tools over Tailscale.
 
-Phase 0 scaffold: routing, config and the health check only. The three tools are
-PLAN.md phases 2, 4 and 5; the job queue they all sit on is phase 1.
+Routing, config, the health check and the job queue's lifecycle. The tools themselves
+are PLAN.md phases 2, 4 and 5; each registers a handler with `app.jobs`.
 """
+
+from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.responses import HTMLResponse
 
-from app import config
+from app import config, jobs
 
-app = FastAPI(title="halo-workbench", docs_url=None, redoc_url=None)
+
+@asynccontextmanager
+async def lifespan(_: FastAPI):
+    """Own the worker thread for exactly as long as the process serves requests.
+
+    Startup also reaps jobs left `running` by a crash and re-queues jobs left
+    `queued` -- see jobs._recover. Both must happen before the worker starts, so
+    they happen here rather than in a route or at import time (import runs twice
+    under `uvicorn --reload`).
+    """
+    jobs.start()
+    try:
+        yield
+    finally:
+        jobs.stop()
+
+
+app = FastAPI(title="halo-workbench", docs_url=None, redoc_url=None, lifespan=lifespan)
 
 
 @app.get("/healthz")
@@ -21,7 +40,13 @@ def healthz() -> dict:
     is a separate concern and belongs on the tool pages, where a stalled server is
     the user's problem rather than the supervisor's.
     """
-    return {"status": "ok", "version": config.VERSION}
+    return {
+        "status": "ok",
+        "version": config.VERSION,
+        # Local and free to read -- it is a queue length in this process, not a probe
+        # of anything. Useful in `watch curl` when a job seems to be sitting still.
+        "queued": jobs.queue_depth(),
+    }
 
 
 @app.get("/", response_class=HTMLResponse)
