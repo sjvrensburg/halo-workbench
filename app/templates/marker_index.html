@@ -1,6 +1,7 @@
 {% extends "base.html" %}
 {% block title %}marker — halo-workbench{% endblock %}
-{% block heading %} <span class="muted">/ marker</span>{% endblock %}
+{% block pagetitle %}PDF → markdown{% endblock %}
+{% set page = "marker" %}
 {% block body %}
 <p>Upload a PDF, get markdown back. Conversion runs on the GPU one job at a time and
 a real paper can take <strong>up to ~20 minutes</strong> — the status page shows
@@ -14,7 +15,7 @@ elapsed time so you can tell "slow" from "stuck".</p>
 
 {% if jobs %}
 <h2>Recent</h2>
-<table>
+<div class="scroll"><table>
   {% for job in jobs %}
   <tr>
     <td><a href="/marker/{{ job.id }}">{{ job.meta.input_filename or job.id }}</a></td>
@@ -23,6 +24,6 @@ elapsed time so you can tell "slow" from "stuck".</p>
     <td class="muted">{{ job.meta.created_at }}</td>
   </tr>
   {% endfor %}
-</table>
+</table></div>
 {% endif %}
 {% endblock %}

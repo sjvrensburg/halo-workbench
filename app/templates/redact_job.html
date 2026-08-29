@@ -1,8 +1,15 @@
 {% extends "base.html" %}
 {% block title %}{{ job.meta.input_filename or job.id }} — redact{% endblock %}
-{% block heading %} <span class="muted">/ <a href="/redact">redact</a></span>{% endblock %}
+{% block pagetitle %}Redaction{% endblock %}
 {% if job.status in ("queued", "running") %}<meta http-equiv="refresh" content="5">{% endif %}
+{% set page = "redact" %}
 {% block body %}
+<style>
+ /* On a phone the two meta columns become one line under the candidate: a horizontally
+    scrolling table of checkboxes is not something anyone will use on an iPad. */
+ .meta{display:none}
+ @media (max-width:38rem){ .meta-col{display:none} .meta{display:block;font-size:.85rem;margin-top:.2rem} }
+</style>
 <div class="card">
   <p><span class="status {{ job.status }}">{{ job.status }}</span>
      <code>{{ job.meta.input_filename or "—" }}</code>
@@ -52,28 +59,34 @@
 
 {% if job.tool == "redact-scan" and job.status == "done" %}
 <form method="post" action="/redact/{{ job.id }}/apply">
-  <table>
-    <tr><th></th><th>candidate</th><th>found by</th><th>hits</th></tr>
+  <div class="scroll"><table>
+    <tr><th></th><th>candidate</th><th class="meta-col">found by</th><th class="meta-col">hits</th></tr>
     {% for span in job.result.spans %}
     <tr>
       <td><input type="checkbox" name="span" value="{{ span.text }}" checked
                  id="s{{ loop.index }}"></td>
       <td><label for="s{{ loop.index }}"><code>{{ span.text }}</code></label>
-          {% if span.contexts %}<br><span class="muted">{{ span.contexts[0] }}</span>{% endif %}</td>
-      <td class="muted">{{ span.category }}{% if span.source == "model" %} (model){% endif %}</td>
-      <td class="muted">{{ span.count }}</td>
+          {% if span.contexts %}<br><span class="muted">{{ span.contexts[0] }}</span>{% endif %}
+          {# Repeated for narrow screens, where the meta columns are hidden rather than
+             pushed off the side of a phone. #}
+          <span class="meta muted">{{ span.category }}{% if span.source == "model" %} · model{% endif %}
+            · {{ span.count }} hit{{ "s" if span.count != 1 }}</span></td>
+      <td class="meta-col muted">{{ span.category }}{% if span.source == "model" %} (model){% endif %}</td>
+      <td class="meta-col muted">{{ span.count }}</td>
     </tr>
     {% endfor %}
-  </table>
+  </table></div>
   <p><button type="submit">Remove the ticked spans</button></p>
 </form>
 {% endif %}
 
-<table class="muted">
+<div class="scroll"><table class="muted">
   <tr><th>job</th><td><code>{{ job.id }}</code></td></tr>
   <tr><th>created</th><td>{{ job.meta.created_at }}</td></tr>
-  {% if job.params.source_job %}
+  {% if job.params.source_job and job.tool == "redact-scan" %}
+  <tr><th>from marker</th><td><a href="/marker/{{ job.params.source_job }}">{{ job.params.source_job }}</a></td></tr>
+  {% elif job.params.source_job %}
   <tr><th>from scan</th><td><a href="/redact/{{ job.params.source_job }}">{{ job.params.source_job }}</a></td></tr>
   {% endif %}
-</table>
+</table></div>
 {% endblock %}

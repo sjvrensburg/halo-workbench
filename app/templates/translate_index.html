@@ -1,6 +1,7 @@
 {% extends "base.html" %}
 {% block title %}translate — halo-workbench{% endblock %}
-{% block heading %} <span class="muted">/ translate</span>{% endblock %}
+{% block pagetitle %}Translate &amp; rewrite{% endblock %}
+{% set page = "translate" %}
 {% block body %}
 <style>
  /* One workspace, two panes. Stacks on a phone or an iPad in portrait, which is where
@@ -8,15 +9,21 @@
  .panes{display:grid;grid-template-columns:1fr 1fr;gap:.75rem}
  @media (max-width:44rem){ .panes{grid-template-columns:1fr} }
  .panes textarea, .out{
-   width:100%;min-height:11rem;padding:.6rem;border:1px solid #8884;border-radius:8px;
+   width:100%;min-height:11rem;padding:.7rem;border:1px solid var(--line);border-radius:10px;
    /* 16px minimum: anything smaller makes iOS Safari zoom the page on focus, every
       time, and the swap button then sits off-screen. */
    font:16px/1.5 system-ui,sans-serif;background:transparent;color:inherit;resize:vertical}
- .out{white-space:pre-wrap;overflow-y:auto;background:#8881}
+ .out{white-space:pre-wrap;overflow-y:auto;background:color-mix(in oklab,var(--ink) 3%,transparent)}
+ .out:empty::before{content:attr(data-placeholder);color:var(--muted)}
  .bar{display:flex;gap:.5rem;align-items:center;margin:.75rem 0;flex-wrap:wrap}
- .swap{border:1px solid #8884;background:transparent;color:inherit;border-radius:8px;
-   padding:.35rem .6rem;font-size:1.1rem;cursor:pointer;line-height:1}
- .swap:hover{background:#8882}
+ .swap{min-height:2.75rem;min-width:2.75rem;justify-content:center;font-size:1.15rem;
+   background:transparent;border:1px solid var(--line);color:var(--ink);padding:0 .7rem}
+ .swap:hover{background:color-mix(in oklab,var(--ink) 5%,transparent)}
+ /* Stacked panes: the arrow should point the way the swap actually goes. */
+ @media (max-width:44rem){ .swap{transform:rotate(90deg)} }
+ .panelabel{display:flex;justify-content:space-between;align-items:baseline;
+   font-size:.82rem;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;
+   margin:0 0 .3rem}
  .checks{display:flex;gap:1rem;flex-wrap:wrap;margin:.4rem 0;font-size:.9rem}
  .pass::before{content:"✓ ";color:#2a7}
  .fail::before{content:"✗ ";color:#c33}
@@ -44,8 +51,15 @@ out before the model sees the text and put back afterwards.</p>
   </div>
 
   <div class="panes">
-    <textarea name="text" id="text" placeholder="Paste text here…" required>{{ job.params.text if job else "" }}</textarea>
-    <div class="out" id="out">{% if job %}{{ job.result.output or "" }}{% endif %}</div>
+    <div>
+      <p class="panelabel"><span id="fromlabel">Source</span></p>
+      <textarea name="text" id="text" placeholder="Paste text here…" required>{{ job.params.text if job else "" }}</textarea>
+    </div>
+    <div>
+      <p class="panelabel"><span id="tolabel">Result</span>
+        <span class="muted" id="checkline"></span></p>
+      <div class="out" id="out" data-placeholder="The translation appears here.">{% if job %}{{ job.result.output or "" }}{% endif %}</div>
+    </div>
   </div>
 
   <div class="bar">
@@ -132,6 +146,9 @@ function refreshMode() {
   const same = source.value !== "auto" && source.value === target.value;
   mode.textContent = same ? "rewrite (same language)" : "translate";
   $("go").textContent = same ? "Rewrite" : "Translate";
+  $("tolabel").textContent = same ? "Rewritten" : "Translation";
+  $("out").dataset.placeholder = same
+    ? "The rewrite appears here." : "The translation appears here.";
 }
 source.onchange = target.onchange = refreshMode;
 
@@ -178,7 +195,7 @@ refreshMode();
 
 {% if jobs %}
 <h2>Recent</h2>
-<table>
+<div class="scroll"><table>
   {% for entry in jobs %}
   <tr>
     <td><a href="/translate/{{ entry.id }}">{{ entry.params.source }}→{{ entry.params.target }}</a></td>
@@ -186,6 +203,6 @@ refreshMode();
     <td><span class="status {{ entry.status }}">{{ entry.status }}</span></td>
   </tr>
   {% endfor %}
-</table>
+</table></div>
 {% endif %}
 {% endblock %}

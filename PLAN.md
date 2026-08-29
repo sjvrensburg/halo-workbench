@@ -44,7 +44,11 @@ registration, four pages. Not four services — see CLAUDE.md "One port".
 ```
 
 `/redact` composes with `/marker`: a converted PDF should be redactable in one click
-from its result page, without a round trip through the user's disk.
+from its result page, without a round trip through the user's disk. **Built 2026-08-29**
+— `POST /marker/<id>/redact` re-verifies the sidecar, then hands the bytes to a scan job
+in memory. A file that would be refused as a download is refused as an input too:
+passing unverified text to the tool whose promise is "everything found was removed"
+would launder the substitution the sidecar exists to catch.
 
 ---
 

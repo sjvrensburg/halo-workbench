@@ -339,6 +339,31 @@ def download(job_id: str):
     return FileResponse(markdown, media_type="text/markdown", filename=markdown.name)
 
 
+@router.post("/marker/{job_id}/redact")
+def redact_this(job_id: str):
+    """Hand this job's verified markdown straight to the redaction tool.
+
+    PLAN.md's Shape section: "a converted PDF should be redactable in one click from its
+    result page, without a round trip through the user's disk". The bytes go from one job
+    directory to the next in memory.
+
+    It re-verifies first, through the same `_verified_markdown` the download route uses.
+    A file that would be refused as a download must also be refused as an input: passing
+    unverified text to a tool whose whole promise is "everything found was removed" would
+    launder exactly the substitution the sidecar exists to catch.
+    """
+    job = _job_or_404(job_id)
+    markdown = _verified_markdown(job)
+
+    redact_id = jobs.submit(
+        "redact-scan",
+        params={"terms": [], "source_job": job.id},
+        upload=(markdown.name, markdown.read_bytes()),
+    )
+    log.info("job %s: markdown handed to redact job %s", job.id, redact_id)
+    return RedirectResponse(f"/redact/{redact_id}", status_code=303)
+
+
 @router.get("/marker/{job_id}/download.zip")
 def download_zip(job_id: str):
     job = _job_or_404(job_id)

@@ -1,6 +1,7 @@
 {% extends "base.html" %}
 {% block title %}regex — halo-workbench{% endblock %}
-{% block heading %} <span class="muted">/ regex</span>{% endblock %}
+{% block pagetitle %}Regex from examples{% endblock %}
+{% set page = "regex" %}
 {% block body %}
 <p>Give examples. Get a regular expression that has been <strong>executed against every
 one of them</strong> before you see it — and if nothing passes, you are told that
@@ -29,7 +30,7 @@ rather than hanging the job.</p>
 
 {% if jobs %}
 <h2>Recent</h2>
-<table>
+<div class="scroll"><table>
   {% for job in jobs %}
   <tr>
     <td><a href="/regex/{{ job.id }}"><code>{{ (job.result.winner.pattern if job.result.winner else "—") | truncate(44) }}</code></a></td>
@@ -37,6 +38,6 @@ rather than hanging the job.</p>
     <td class="muted">{{ job.meta.created_at }}</td>
   </tr>
   {% endfor %}
-</table>
+</table></div>
 {% endif %}
 {% endblock %}

@@ -56,7 +56,12 @@ PATTERNS: list[tuple[str, str]] = [
     # spaces, which in prose swallows the preceding words.
     ("email", r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b"),
     # URLs before phone numbers: a URL with a port looks like a number run otherwise.
-    ("url", r"\bhttps?://[^\s<>\"')\]]+"),
+    # The trailing-punctuation exclusion is not tidiness: without it a URL at the end of
+    # a sentence swallows the full stop, and the same DOI is then offered TWICE as two
+    # different candidates -- once with the period and once without -- which is how it
+    # looked on a real converted paper (2026-08-29). A candidate list the user has to
+    # de-duplicate by eye is a list they stop reading.
+    ("url", r"\bhttps?://[^\s<>\"')\]]*[^\s<>\"')\].,;:!?]"),
     # IBAN: two letters, two check digits, then up to 30 alphanumerics, allowing the
     # spaced-in-fours form people actually type. The trailing 1-3 group is not optional
     # decoration: without it `GB82 WEST 1234 5698 7654 32` matches up to `7654` and the

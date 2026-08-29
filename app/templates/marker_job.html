@@ -1,11 +1,12 @@
 {% extends "base.html" %}
 {% block title %}{{ job.meta.input_filename or job.id }} — marker{% endblock %}
-{% block heading %} <span class="muted">/ <a href="/marker">marker</a></span>{% endblock %}
+{% block pagetitle %}Conversion{% endblock %}
 {% if job.status in ("queued", "running") %}
   {# Meta refresh, not JS polling: the page has no other client-side behaviour and
      this keeps working if the tab is restored hours later. #}
   <meta http-equiv="refresh" content="5">
 {% endif %}
+{% set page = "marker" %}
 {% block body %}
 <div class="card">
   <p><span class="status {{ job.status }}">{{ job.status }}</span>
@@ -36,13 +37,17 @@
     {% endif %}
     <p class="muted">Verified against marker's checksummed provenance sidecar, again
        just now, at download time.</p>
+    <form method="post" action="/marker/{{ job.id }}/redact" class="inline">
+      <button type="submit" class="secondary">Redact this markdown &rarr;</button>
+      <span class="muted">scans it for names, numbers and contact details — no download needed</span>
+    </form>
   {% endif %}
 </div>
 
-<table class="muted">
+<div class="scroll"><table class="muted">
   <tr><th>job</th><td><code>{{ job.id }}</code></td></tr>
   <tr><th>created</th><td>{{ job.meta.created_at }}</td></tr>
   {% if job.meta.started_at %}<tr><th>started</th><td>{{ job.meta.started_at }}</td></tr>{% endif %}
   {% if job.meta.finished_at %}<tr><th>finished</th><td>{{ job.meta.finished_at }}</td></tr>{% endif %}
-</table>
+</table></div>
 {% endblock %}

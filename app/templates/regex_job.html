@@ -1,7 +1,8 @@
 {% extends "base.html" %}
 {% block title %}regex {{ job.id }}{% endblock %}
-{% block heading %} <span class="muted">/ <a href="/regex">regex</a></span>{% endblock %}
+{% block pagetitle %}Regex{% endblock %}
 {% if job.status in ("queued", "running") %}<meta http-equiv="refresh" content="4">{% endif %}
+{% set page = "regex" %}
 {% block body %}
 <div class="card">
   <p><span class="status {{ job.status }}">{{ job.status }}</span>
@@ -34,7 +35,7 @@
 
 {% if job.status == "done" and job.result.winner %}
 <h2>The evidence</h2>
-<table>
+<div class="scroll"><table>
   <tr><th>your example</th><th>expected</th><th>what the pattern did</th></tr>
   {% for example in job.params.positives %}
   <tr><td><code>{{ example }}</code></td><td class="muted">match</td>
@@ -44,12 +45,12 @@
   <tr><td><code>{{ example }}</code></td><td class="muted">no match</td>
       <td>{{ "MATCHED" if job.result.winner.negatives[loop.index0] else "did not match" }}</td></tr>
   {% endfor %}
-</table>
+</table></div>
 {% endif %}
 
 {% if job.status == "done" and job.result.tried %}
 <h2>{{ "Also tried" if job.result.winner else "Everything tried" }}</h2>
-<table>
+<div class="scroll"><table>
   {% for attempt in job.result.tried %}
     {% if not attempt.passes %}
     <tr>
@@ -58,11 +59,11 @@
     </tr>
     {% endif %}
   {% endfor %}
-</table>
+</table></div>
 {% endif %}
 
-<table class="muted">
+<div class="scroll"><table class="muted">
   <tr><th>job</th><td><code>{{ job.id }}</code></td></tr>
   <tr><th>created</th><td>{{ job.meta.created_at }}</td></tr>
-</table>
+</table></div>
 {% endblock %}

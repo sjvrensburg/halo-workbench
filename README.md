@@ -26,7 +26,8 @@ scripts/dev.sh            # uvicorn on :8093 with --reload
 curl -s localhost:8093/healthz
 ```
 
-Then `http://localhost:8093/marker` to convert a PDF. Acceptance tests:
+Then `http://localhost:8093/` for the four tools. A converted PDF is redactable in one
+click from its result page. Acceptance tests:
 
 ```bash
 tests/phase1_acceptance.sh    # the queue: serialisation, and kill -9 recovery

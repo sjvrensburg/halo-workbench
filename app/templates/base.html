@@ -1,24 +1,149 @@
-{# One stylesheet for the whole app, inline. Four pages do not need an asset pipeline
-   or a request that can 404 behind `tailscale serve`. #}
+{# One stylesheet for the whole app, inline. Four pages do not need an asset pipeline or
+   a request that can 404 behind `tailscale serve`. Design rules kept to a few:
+   * one accent, used only for the primary action and focus rings;
+   * light and dark from the same tokens, so neither is an afterthought;
+   * 16px minimum on anything typed into -- iOS Safari zooms the page otherwise;
+   * touch targets at least 44px, because this is used from an iPad more than a desk. #}
 <!doctype html>
 <html lang="en">
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="color-scheme" content="light dark">
 <title>{% block title %}halo-workbench{% endblock %}</title>
 <style>
- :root{color-scheme:light dark}
- body{font:16px/1.5 system-ui,sans-serif;max-width:48rem;margin:2.5rem auto;padding:0 1rem}
- h1{font-size:1.4rem} h1 a{color:inherit;text-decoration:none}
- code,pre{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:.87em}
- pre{background:#8881;padding:.75rem;border-radius:6px;overflow-x:auto;white-space:pre-wrap}
- .muted{color:#888} .big{font-size:1.6rem;font-weight:600}
- .status{display:inline-block;padding:.1rem .5rem;border-radius:999px;font-size:.8rem;
-         text-transform:uppercase;letter-spacing:.04em;background:#8882}
- .status.done{background:#2a82} .status.failed{background:#c332} .status.running{background:#29a2}
- .warn{border-left:3px solid #c93;padding-left:.75rem}
- table{border-collapse:collapse;width:100%} td,th{text-align:left;padding:.3rem .5rem .3rem 0}
- .card{border:1px solid #8883;border-radius:8px;padding:1rem;margin:1rem 0}
- form p{margin:.6rem 0}
+ :root{
+   --bg:#fbfbfa; --surface:#fff; --line:#e6e4df; --ink:#1c1b19; --muted:#6f6c66;
+   --accent:#2f6f5b; --accent-ink:#fff; --warn-line:#c9922f; --warn-bg:#fbf3e2;
+   --ok:#2c7a5a; --bad:#b3392f;
+   --radius:12px; --pad:1rem; --shadow:0 1px 2px rgba(0,0,0,.05), 0 8px 24px -18px rgba(0,0,0,.35);
+ }
+ @media (prefers-color-scheme:dark){
+   :root{
+     --bg:#16171a; --surface:#1d1f23; --line:#31343a; --ink:#e9e8e4; --muted:#9a988f;
+     --accent:#5fbf9c; --accent-ink:#10231c; --warn-line:#d6a343; --warn-bg:#2a2317;
+     --ok:#5fbf9c; --bad:#e2685c;
+     --shadow:0 1px 2px rgba(0,0,0,.4), 0 10px 30px -20px #000;
+   }
+ }
+ *{box-sizing:border-box}
+ html{-webkit-text-size-adjust:100%}
+ body{
+   margin:0;background:var(--bg);color:var(--ink);
+   font:16px/1.6 ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+   font-feature-settings:"kern","liga";
+ }
+ .wrap{max-width:62rem;margin:0 auto;padding:1.25rem max(1rem,env(safe-area-inset-left)) 4rem}
+ a{color:inherit;text-decoration-color:color-mix(in oklab,var(--accent) 55%,transparent);
+   text-underline-offset:.15em}
+ a:hover{text-decoration-color:var(--accent)}
+ code,pre,.mono{font-family:ui-monospace,SFMono-Regular,"SF Mono",Menlo,monospace;font-size:.9em}
+ code{background:color-mix(in oklab,var(--ink) 7%,transparent);padding:.1em .35em;border-radius:5px;overflow-wrap:anywhere}
+ pre{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);
+     padding:.9rem;overflow-x:auto;white-space:pre-wrap;word-break:break-word;margin:.6rem 0}
+ pre code{background:none;padding:0}
+
+ /* Header: the four tools, on every page, because a tool page is where you realise you
+    wanted a different tool. */
+ header.top{position:sticky;top:0;z-index:5;background:color-mix(in oklab,var(--bg) 88%,transparent);
+   backdrop-filter:saturate(1.4) blur(8px);border-bottom:1px solid var(--line)}
+ header.top .wrap{padding-top:.6rem;padding-bottom:.6rem;display:flex;gap:.35rem .9rem;
+   align-items:center;flex-wrap:wrap}
+ .brand{font-weight:650;letter-spacing:-.01em;text-decoration:none;margin-right:.4rem}
+ .brand span{color:var(--muted);font-weight:400}
+ nav.tools{display:flex;gap:.15rem;flex-wrap:wrap;margin-left:auto}
+ nav.tools a{display:inline-flex;align-items:center;min-height:2.4rem;padding:.25rem .7rem;
+   border-radius:999px;text-decoration:none;color:var(--muted);font-size:.95rem}
+ nav.tools a:hover{background:color-mix(in oklab,var(--ink) 6%,transparent);color:var(--ink)}
+ nav.tools a[aria-current]{background:color-mix(in oklab,var(--accent) 14%,transparent);
+   color:var(--ink);font-weight:550}
+
+ h1{font-size:1.5rem;line-height:1.25;letter-spacing:-.02em;margin:1.4rem 0 .2rem}
+ h2{font-size:1.1rem;letter-spacing:-.01em;margin:2rem 0 .5rem}
+ h1 a{text-decoration:none}
+ p{margin:.7rem 0} .lede{color:var(--muted);max-width:52ch}
+
+ .card{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);
+   padding:var(--pad);margin:1rem 0;box-shadow:var(--shadow)}
+ .muted{color:var(--muted)}
+ .big{font-size:1.6rem;font-weight:600;letter-spacing:-.02em;margin:.3rem 0}
+ .warn{border-left:3px solid var(--warn-line);background:var(--warn-bg);
+   padding:.7rem .9rem;border-radius:0 8px 8px 0;margin:.8rem 0}
+
+ .status{display:inline-flex;align-items:center;gap:.4em;padding:.15rem .6rem;border-radius:999px;
+   font-size:.78rem;font-weight:600;text-transform:uppercase;letter-spacing:.06em;
+   background:color-mix(in oklab,var(--ink) 8%,transparent);color:var(--muted)}
+ .status::before{content:"";width:.5em;height:.5em;border-radius:50%;background:currentColor}
+ .status.done{background:color-mix(in oklab,var(--ok) 16%,transparent);color:var(--ok)}
+ .status.failed{background:color-mix(in oklab,var(--bad) 15%,transparent);color:var(--bad)}
+ .status.running{background:color-mix(in oklab,var(--accent) 16%,transparent);color:var(--accent)}
+
+ button,.button{font:inherit;font-weight:550;min-height:2.75rem;padding:.55rem 1.1rem;
+   border-radius:10px;border:1px solid transparent;background:var(--accent);color:var(--accent-ink);
+   cursor:pointer;display:inline-flex;align-items:center;gap:.4rem}
+ button:hover,.button:hover{filter:brightness(1.06)}
+ button.secondary,.button.secondary{background:transparent;border-color:var(--line);color:var(--ink)}
+ button.secondary:hover{background:color-mix(in oklab,var(--ink) 5%,transparent)}
+ :where(a,button,input,select,textarea,summary):focus-visible{
+   outline:2px solid var(--accent);outline-offset:2px;border-radius:8px}
+
+ /* Every text-ish control, including inputs that omit type="text" -- an attribute
+    selector on [type=text] silently skips those, which is how the regex tool's
+    description box ended up as the one unstyled field on the site. */
+ input:not([type=checkbox]):not([type=radio]),select,textarea{
+   font:inherit;font-size:16px;  /* 16px or iOS zooms on focus */
+   color:inherit;background:var(--surface);border:1px solid var(--line);
+   border-radius:10px;padding:.6rem .7rem;max-width:100%;min-height:2.75rem}
+ textarea{width:100%;line-height:1.6;resize:vertical}
+ label{display:inline-block}
+ /* A label wrapping a full-width control must be block, or the control's width:100%
+    resolves against the label's shrink-to-fit box and honours a `cols` attribute
+    instead of the layout. */
+ label:has(textarea),label:has(input:not([type=checkbox]):not([type=radio])){display:block}
+ label:has(textarea) textarea,label:has(input[type=text]) input{margin-top:.3rem}
+ form p{margin:.8rem 0}
+ .inline{display:flex;align-items:center;gap:.6rem;flex-wrap:wrap;margin:.8rem 0}
+ details{border:1px solid var(--line);border-radius:var(--radius);padding:.2rem .9rem;margin:1rem 0;
+   background:var(--surface)}
+ details[open]{padding-bottom:.6rem}
+ summary{cursor:pointer;padding:.7rem 0;font-weight:550;min-height:2.75rem;display:flex;align-items:center}
+
+ /* Tables scroll rather than squashing: a job id and a filename do not fit a phone. */
+ .scroll{overflow-x:auto;-webkit-overflow-scrolling:touch;margin:.5rem -.25rem}
+ table{border-collapse:collapse;width:100%;font-size:.95rem}
+ th{text-align:left;font-weight:600;color:var(--muted);font-size:.82rem;text-transform:uppercase;
+   letter-spacing:.05em}
+ td,th{padding:.55rem .7rem .55rem 0;border-bottom:1px solid var(--line);vertical-align:top}
+ tr:last-child td,tr:last-child th{border-bottom:0}
+
+ ul.tools{list-style:none;padding:0;display:grid;gap:.7rem;
+   grid-template-columns:repeat(auto-fit,minmax(24rem,1fr))}
+ ul.tools li{margin:0}
+ ul.tools a,ul.tools .todo{display:block;height:100%;padding:.9rem 1rem;border-radius:var(--radius);
+   border:1px solid var(--line);background:var(--surface);text-decoration:none;box-shadow:var(--shadow)}
+ ul.tools a:hover{border-color:color-mix(in oklab,var(--accent) 45%,var(--line))}
+ ul.tools strong{display:block;margin-bottom:.15rem}
+ ul.tools .todo{opacity:.6;box-shadow:none}
+
+ @media (max-width:34rem){
+   .wrap{padding-left:.9rem;padding-right:.9rem}
+   h1{font-size:1.3rem} .big{font-size:1.35rem}
+   nav.tools{margin-left:0;width:100%}
+   nav.tools a{padding:.25rem .55rem;font-size:.9rem}
+ }
+ @media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
 </style>
-<h1><a href="/">halo-workbench</a>{% block heading %}{% endblock %}</h1>
-{% block body %}{% endblock %}
+
+<header class="top"><div class="wrap">
+  <a class="brand" href="/">halo&#8209;workbench</a>
+  <nav class="tools">
+    <a href="/marker" {% if page == "marker" %}aria-current="page"{% endif %}>marker</a>
+    <a href="/redact" {% if page == "redact" %}aria-current="page"{% endif %}>redact</a>
+    <a href="/regex" {% if page == "regex" %}aria-current="page"{% endif %}>regex</a>
+    <a href="/translate" {% if page == "translate" %}aria-current="page"{% endif %}>translate</a>
+  </nav>
+</div></header>
+
+<div class="wrap">
+  <h1>{% block pagetitle %}{% endblock %}{% block heading %}{% endblock %}</h1>
+  {% block body %}{% endblock %}
+</div>

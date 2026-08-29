@@ -7,11 +7,12 @@ are PLAN.md phases 2, 4 and 5; each registers a handler with `app.jobs`.
 import logging
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse
 
 from app import config, jobs
 from app.tools import marker, redact, regex, translate
+from app.views import templates
 
 
 @asynccontextmanager
@@ -68,19 +69,6 @@ def healthz() -> dict:
 
 
 @app.get("/", response_class=HTMLResponse)
-def index() -> str:
-    return """<!doctype html>
-<title>halo-workbench</title>
-<style>
- body{font:16px/1.5 system-ui,sans-serif;max-width:44rem;margin:3rem auto;padding:0 1rem}
- li{margin:.4rem 0} .todo{color:#888}
-</style>
-<h1>halo-workbench</h1>
-<p>Specialist tools on the EVO-X3. Each one ships a verifier that runs on every request.</p>
-<ul>
-  <li><a href="/marker">PDF &rarr; markdown (marker)</a></li>
-  <li><a href="/redact">Assisted redaction &mdash; candidates, reviewed by you</a></li>
-  <li><a href="/regex">Regex from examples &mdash; tested against them before you see it</a></li>
-  <li><a href="/translate">Translate zh&harr;en, or rewrite in place</a></li>
-</ul>
-"""
+def index(request: Request):
+    return templates.TemplateResponse(request, "index.html",
+                                      headers={"cache-control": "no-store"})

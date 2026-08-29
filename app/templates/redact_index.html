@@ -1,6 +1,7 @@
 {% extends "base.html" %}
 {% block title %}redact — halo-workbench{% endblock %}
-{% block heading %} <span class="muted">/ redact</span>{% endblock %}
+{% block pagetitle %}Assisted redaction{% endblock %}
+{% set page = "redact" %}
 {% block body %}
 <p>Upload a document, review what was found, and download a
 <strong>redaction candidate</strong>.</p>
@@ -30,7 +31,7 @@ it with <a href="/marker">marker</a> first.</p>
 
 {% if jobs %}
 <h2>Recent</h2>
-<table>
+<div class="scroll"><table>
   {% for job in jobs %}
   <tr>
     <td><a href="/redact/{{ job.id }}">{{ job.meta.input_filename or job.id }}</a></td>
@@ -39,6 +40,6 @@ it with <a href="/marker">marker</a> first.</p>
     <td class="muted">{{ job.meta.created_at }}</td>
   </tr>
   {% endfor %}
-</table>
+</table></div>
 {% endif %}
 {% endblock %}
