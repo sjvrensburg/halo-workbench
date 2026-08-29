@@ -168,7 +168,7 @@ before recovery touches a single `meta.json`, and a second instance exits 3 with
 message naming the holding pid. flock rather than a pid file, so a `kill -9` cannot
 leave a stale lock. Covered by `tests/phase1_acceptance.sh` check 3.
 
-## Phase 3 — reachability
+## Phase 3 — reachability ✅ DONE 2026-08-29 (bar the operator's one command)
 
 - Install the unit: `systemctl --user enable --now halo-workbench` (add to halo-prep's
   `config/models.conf`? **No** — that manifest is for llama-server units and
@@ -178,6 +178,26 @@ leave a stale lock. Covered by `tests/phase1_acceptance.sh` check 3.
   already warns that the serve config is invisible to grep; this adds a fifth port to
   the four in `docs/06` §7 and `docs/10`, so update those tables in the same commit.
 - Verify from the laptop: `curl http://evo-x3:8093/healthz`.
+
+Done 2026-08-29: the unit is installed, enabled and running (`Linger=yes`, so it
+survives logout and reboot), it restarts cleanly, and `/healthz` answers on loopback.
+Smoke-tested through the resident service rather than a dev server: a 33-page spec
+converted, 70 KB of markdown with two diagrams, download 200, `pgrep -f surya` empty
+30 s later.
+halo-prep's `docs/06` §7, `docs/10`'s two port tables and its README now carry `:8093`
+as a fifth serve registration — with the note that it is the only one of the five that
+exposes *documents* rather than inference.
+
+**Still outstanding, and it is the operator's:**
+
+```bash
+sudo tailscale serve --bg --http=8093 http://127.0.0.1:8093
+```
+
+Until that runs, `tailscale serve status` lists four ports and the box is reachable
+only on loopback. Verification from the laptop is blocked behind it (and the laptop
+was last seen offline 2h before this was written, so it needs doing from there
+afterwards).
 
 Do phases 1–3 and stop. Get real use out of marker before building anything else —
 if the other three never get built, the project has already paid for itself.

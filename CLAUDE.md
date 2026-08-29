@@ -51,12 +51,12 @@ runs the queue's serialisation and `kill -9` recovery against a throwaway state 
 otherwise they are run by hand against the running app. That is the intended shape: the checks that matter here are the
 per-request verifiers, not a suite that runs at build time.
 
-The unit is written but **not installed** (PLAN.md phase 3 installs it, after marker
-works):
+The unit is **installed and enabled** as of 2026-08-29 (PLAN.md phase 3), so a dev
+server and the resident service now compete for both the port and the state directory.
+The lock makes that a clean refusal rather than a fight — stop the service first:
 
 ```bash
-cp config/halo-workbench.service ~/.config/systemd/user/
-systemctl --user daemon-reload && systemctl --user enable --now halo-workbench
+systemctl --user stop halo-workbench && scripts/dev.sh
 systemctl --user status halo-workbench          # and: journalctl --user -u halo-workbench -f
 ```
 

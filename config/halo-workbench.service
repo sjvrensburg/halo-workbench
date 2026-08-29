@@ -3,8 +3,8 @@
 #   cp config/halo-workbench.service ~/.config/systemd/user/
 #   systemctl --user daemon-reload && systemctl --user enable --now halo-workbench
 #
-# NOT INSTALLED as of 2026-08-29 -- PLAN.md phase 3 installs it, after the marker
-# tool actually works. Remote access additionally needs, from the operator:
+# INSTALLED and enabled 2026-08-29 (PLAN.md phase 3). Remote access additionally
+# needs, from the operator:
 #   tailscale serve --bg --http=8093 http://127.0.0.1:8093
 # which lives in tailscaled, not in this repo, and will not survive a rebuild.
 
@@ -25,7 +25,16 @@ WorkingDirectory=/home/stefan/Projects/halo-workbench
 # own surya servers on top, and this box has no swap and OOM-kills under pressure
 # (halo-prep pitfall #17). A second worker process would also give each its own
 # in-memory queue, quietly breaking the serialisation the job store depends on.
+#
+# A marker job runs in a transient systemd scope of its own, which is a separate unit
+# and therefore survives `systemctl --user stop` of this one. That is deliberate: the
+# next start marks the job failed/interrupted and stops the leftover scope (see
+# app/tools/marker.py). Do not add KillMode=none or a Delegate= here to "fix" it.
 ExecStart=/home/stefan/venvs/workbench/bin/uvicorn app.main:app --host 127.0.0.1 --port 8093
+# Python block-buffers stdout when it is a pipe rather than a tty, so without this the
+# journal shows a job's log lines minutes late, in a lump -- which looks like the app
+# hanging, on the one tool whose normal state is "quiet for 20 minutes".
+Environment=PYTHONUNBUFFERED=1
 Restart=on-failure
 RestartSec=5
 

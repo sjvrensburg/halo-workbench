@@ -13,8 +13,8 @@ verifier that runs on every request:
 | **regex** | give examples, get a regex | your examples, actually executed against the pattern |
 | **translate** | zh↔en translate/paraphrase, protecting spans you mark | protected spans round-trip byte-identical; residual-script check |
 
-**Status: phase 2.** The job queue and the marker tool work; redact, regex and
-translate are not started. `PLAN.md` is the build plan; `CLAUDE.md` is the decisions.
+**Status: phase 3.** The job queue and the marker tool work and the service is
+installed and enabled; redact, regex and translate are not started. `PLAN.md` is the build plan; `CLAUDE.md` is the decisions.
 
 ## Run it (development)
 
@@ -31,22 +31,28 @@ tests/phase1_acceptance.sh    # the queue: serialisation, and kill -9 recovery
 tests/phase2_acceptance.sh    # marker: what the sidecar verifier refuses (no GPU needed)
 ```
 
-## Run it (resident) — not yet installed
+## Run it (resident) — installed 2026-08-29
 
 ```bash
 cp config/halo-workbench.service ~/.config/systemd/user/
 systemctl --user daemon-reload
 systemctl --user enable --now halo-workbench
+systemctl --user status halo-workbench
+journalctl --user -u halo-workbench -f
 ```
+
+Lingering is on, so it comes back after a reboot without anyone logging in.
 
 Remote access needs one more command, run by the operator, whose config lives in
-`tailscaled` rather than in this repo:
+`tailscaled` rather than in this repo — nothing here regenerates it and nothing here
+will tell you it is missing:
 
 ```bash
-tailscale serve --bg --http=8093 http://127.0.0.1:8093
+sudo tailscale serve --bg --http=8093 http://127.0.0.1:8093
 ```
 
-Then `http://evo-x3:8093` from any machine on the tailnet.
+Then `http://evo-x3:8093` from any machine on the tailnet — the name, never the
+`100.x` address, which returns tailscaled's own 404 (halo-prep pitfall #33).
 
 ## Related
 
