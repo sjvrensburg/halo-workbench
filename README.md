@@ -78,11 +78,24 @@ Remote access needs one more command, run by the operator, whose config lives in
 will tell you it is missing:
 
 ```bash
+# Node port: http://evo-x3:8093
 sudo tailscale serve --bg --http=8093 http://127.0.0.1:8093
+
+# A Tailscale Service: http://halo-workbench/ , its own name and VIP on the tailnet,
+# so the address survives this moving to another machine and carries no port.
+tailscale serve --service=svc:halo-workbench --bg --yes --http=80 http://127.0.0.1:8093
 ```
 
-Then `http://evo-x3:8093` from any machine on the tailnet — the name, never the
-`100.x` address, which returns tailscaled's own 404 (halo-prep pitfall #33).
+Then `http://halo-workbench/` — or `http://evo-x3:8093`, which still works — from any
+machine on the tailnet. Always the name, never the `100.x` address, which returns
+tailscaled's own 404 (halo-prep pitfall #33).
+
+The Service form needs three things this repo does not create: the Service defined in
+the admin console (`svc:halo-workbench`, `tcp:80`), a tailnet policy that grants it, and
+a **tagged host** — a Service host must be a tagged node, and tagging moves the device's
+ownership from you to the tailnet (which is why the policy also carries a Tailscale SSH
+rule for `tag:server`; the stock rule is scoped to `autogroup:self` and stops covering a
+tagged box). The host must then be approved in the console before it serves anything.
 
 ## Related
 
