@@ -150,8 +150,21 @@ runs marker in its own process group and kills the group. These two put themselv
 a process group of their own, so `kill -- -PGID` never reaches them. The app therefore
 runs the wrapper inside a transient `systemd-run --user --scope` and empties that
 cgroup on every exit path, plus any scope left behind by a killed service at startup.
-A cgroup is the one grouping a child cannot leave. **The hole is still in the wrapper**
-and halo-prep should close it there too — this is a belt, not the fix.
+A cgroup is the one grouping a child cannot leave. **The wrapper was fixed too**
+(halo-prep 92ffc7d, pitfall #37); this app sets `MARKER_RUN_SCOPE=0` so there is one
+scope rather than a nested pair, and it is the outer one — the only scope that can
+still be reaped after *this service* is killed mid-conversion.
+
+Verified 2026-08-29 with the service run as a systemd unit: `systemctl --user kill -s
+KILL` mid-conversion leaves two surya servers and a live scope; the restart marks the
+job `failed / interrupted`, stops that job's scope, and `pgrep -f surya` is empty. On
+the success path, empty 30 s after the job finishes.
+
+**Known limitation, for phase 3.** Two instances sharing a state directory (`dev.sh`
+alongside the installed unit) will fight: uvicorn runs the lifespan *before* it binds
+the port, so the second instance recovers and reaps the first one's live job even
+though it then exits with "address already in use". Concurrency 1 assumes one
+instance; nothing enforces it yet.
 
 ## Phase 3 — reachability
 

@@ -22,10 +22,9 @@ async def lifespan(_: FastAPI):
     they happen here rather than in a route or at import time (import runs twice
     under `uvicorn --reload`).
     """
-    # Before the worker: a scope left by a killed process is holding GPU memory now,
-    # and the first thing this service does is hand marker the GPU again.
-    marker.reap_orphan_scopes()
-    jobs.start()
+    # A job the previous process was running is holding GPU memory in its cgroup right
+    # now, and the first thing this service will do is hand marker the GPU again.
+    marker.reap_scopes_for(jobs.start())
     try:
         yield
     finally:

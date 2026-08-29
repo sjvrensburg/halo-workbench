@@ -23,6 +23,7 @@ from __future__ import annotations
 import hashlib
 import io
 import logging
+import os
 import shutil
 import subprocess
 import zipfile
@@ -76,10 +77,11 @@ def _reap_scope(unit: str) -> None:
     (PGID == their own PID), so `kill -- -PGID` never reaches them. 2.6 GB stranded on
     a box with no swap that OOM-kills under pressure (halo-prep pitfall #17).
 
-    A cgroup is the one grouping a child cannot leave without privileges, hence the
-    transient scope. This does not bypass marker_run.sh and does not change how marker
-    is invoked; it only makes the wrapper's own cleanup intent enforceable. The hole
-    is in the wrapper and should be fixed there too -- this is the belt, not the fix.
+    The wrapper now opens a cgroup scope of its own for the same reason (halo-prep,
+    2026-08-29, pitfall #37), and this app tells it not to -- see MARKER_RUN_SCOPE
+    below. One scope, opened by the outer caller, because only the outer caller can
+    still reap it after the *service* is killed mid-job. A cgroup is the one grouping
+    a child cannot leave without privileges.
     """
     subprocess.run(
         ["systemctl", "--user", "stop", unit],
@@ -132,26 +134,25 @@ def verify(markdown: Path) -> None:
         )
 
 
-def reap_orphan_scopes() -> int:
-    """Stop marker scopes left behind by a previous process. Called at startup.
+def reap_scopes_for(job_ids: list[str]) -> None:
+    """Stop the scopes of jobs a previous process left mid-flight.
 
     A job that was `running` when the service was killed is reaped as `interrupted`
     (jobs._recover), but that only fixes the bookkeeping -- the surya servers it
     started are in a cgroup that outlived the service, and nothing else will ever
     stop them. Same 2.6 GB, same box with no swap.
+
+    Takes the ids rather than matching `workbench-marker-*.scope`, and MEASURED
+    2026-08-29 that distinction matters: a wildcard reaper run at startup killed the
+    live conversion of an instance that was already running (uvicorn fires the
+    lifespan before it binds the port, so even a second instance that goes on to fail
+    with "address already in use" gets to run this first). Only jobs this state
+    directory owns, and only ones recovery just declared nobody is running.
     """
-    listing = subprocess.run(
-        ["systemctl", "--user", "list-units", "--no-legend", "--plain",
-         "workbench-marker-*.scope"],
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-    units = [line.split()[0] for line in listing.stdout.splitlines() if line.strip()]
-    for unit in units:
-        log.warning("stopping orphaned marker scope %s from a previous run", unit)
+    for job_id in job_ids:
+        unit = _scope_unit(job_id)
+        log.warning("stopping marker scope %s left by an interrupted job", unit)
         _reap_scope(unit)
-    return len(units)
 
 
 # ── the job handler ──────────────────────────────────────────────────────────
@@ -181,6 +182,12 @@ def convert(job: jobs.Job) -> None:
 
     command = [str(config.MARKER_RUN), str(pdf), str(outdir)]
     unit = _scope_unit(job.id)
+    # MARKER_RUN_SCOPE=0 tells marker_run.sh not to open a scope of its own. Nesting
+    # would put the surya servers in the inner cgroup, which our startup reaper cannot
+    # see -- so a `kill -9` of this service would strand exactly what all of this is
+    # here to prevent. The scope has to belong to whoever outlives the job.
+    env = {**os.environ, "MARKER_RUN_SCOPE": "0"}
+
     if shutil.which("systemd-run"):
         # A transient scope so every descendant lands in one cgroup we can empty
         # afterwards -- see _reap_scope. --collect so a failed scope does not linger
@@ -188,6 +195,8 @@ def convert(job: jobs.Job) -> None:
         command = ["systemd-run", "--user", "--scope", "--collect", "--quiet",
                    f"--unit={unit}", *command]
     else:
+        # Then let the wrapper open its own after all: its cleanup is better than none.
+        env.pop("MARKER_RUN_SCOPE")
         # No user systemd (not this box; the authoring laptop, where none of this
         # works anyway). Run it plainly rather than refusing to run at all.
         log.warning("systemd-run not found — marker will run without a cgroup to reap")
@@ -197,6 +206,7 @@ def convert(job: jobs.Job) -> None:
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         text=True,
+        env=env,
     )
     try:
         stdout, stderr = proc.communicate(timeout=MARKER_TIMEOUT_SECONDS)

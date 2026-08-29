@@ -320,8 +320,11 @@ def _worker_loop() -> None:
 # ── startup recovery and retention ───────────────────────────────────────────
 
 
-def _recover() -> None:
+def _recover() -> list[str]:
     """Reconcile the disk with the fact that this process just started.
+
+    Returns the ids it marked interrupted, because a tool may have left more than a
+    status behind -- marker leaves a cgroup full of model servers holding GPU memory.
 
     Runs before the worker does, because both of these decide what the worker sees:
 
@@ -332,14 +335,18 @@ def _recover() -> None:
       submission order; the user was told it was accepted.
     """
     config.JOBS_DIR.mkdir(parents=True, exist_ok=True)
+    interrupted = []
 
     for job in sorted(all_jobs(), key=lambda j: j.id):  # oldest first: submission order
         if job.status == RUNNING:
             _update(job.id, status=FAILED, finished_at=_now(), error="interrupted")
             log.warning("job %s was running at shutdown — marked interrupted", job.id)
+            interrupted.append(job.id)
         elif job.status == QUEUED:
             _QUEUE.put(job.id)
             log.info("job %s re-queued after restart", job.id)
+
+    return interrupted
 
 
 def prune(now: datetime | None = None) -> int:
@@ -394,12 +401,16 @@ def _pruner_loop() -> None:
 # ── lifecycle ────────────────────────────────────────────────────────────────
 
 
-def start() -> None:
-    """Recover, prune, and start the two background threads. Called from the lifespan."""
+def start() -> list[str]:
+    """Recover, prune, and start the two background threads. Called from the lifespan.
+
+    Returns the ids of jobs that were interrupted by the previous process, for a tool
+    that has cleaning up of its own to do.
+    """
     global _WORKER, _PRUNER
 
     _STOP.clear()
-    _recover()
+    interrupted = _recover()
     prune()
 
     # Exactly one worker. A second would double GPU contention on a box with no swap,
@@ -409,6 +420,8 @@ def start() -> None:
     _WORKER.start()
     _PRUNER = threading.Thread(target=_pruner_loop, name="job-pruner", daemon=True)
     _PRUNER.start()
+
+    return interrupted
 
 
 def stop(timeout: float = 5.0) -> None:
