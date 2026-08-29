@@ -381,14 +381,28 @@ re-litigating it later.
 
 Lowest priority of the three, and the only one that may need a new model on disk.
 
-### 6a. Bake-off first — no UI until a model is chosen
+### 6a. Bake-off first — no UI until a model is chosen ✅ DONE 2026-08-29
+
+**Answered: Hy-MT2-7B on `:8094`, with ZnZ sentinels rather than its native
+instruction.** Full write-up, method and raw output in
+[`docs/translation-bakeoff.md`](docs/translation-bakeoff.md); the table below is the
+plan as written beforehand and is kept for the record.
+
+Three findings that change 6b, briefly: the sentinels beat the native lever on the very
+model chosen for that lever (10/10 against 8/10); two `temperature: 0` runs of the same
+arm differed on 7 of 10 paragraphs, so the per-request verifier is load-bearing rather
+than ceremonial; and 6b's span checks needed two corrections — "present once" must be
+"as often as the source has it", and "in order" has to go, because translation reorders
+legitimately. MiLMMT-46-1B was rejected on adequacy despite scoring 9/10 mechanically:
+it renders "falls by 12.4%" as 「下降了 12.4% 倍」 and inverts who serves notice on whom.
+
 
 Four candidates, and the box already owns two of them:
 
 | Candidate | On disk? | Notes |
 |---|---|---|
 | **MiLMMT-46-1B** (`:8089`, `llama-milmmt.service`) | yes, Q8_0 | purpose-built MT, already wired for `../anti-watermark-mcp`, ~1 GiB, on-demand |
-| **MiLMMT-46-12B** (`~/models/milmmt-46-12b`) | yes, Q8_0 | same family, no unit; the 1B unit's comment says swap `--model` and `--alias` to try it |
+| **MiLMMT-46-12B** (`~/models/milmmt-46-12b`) | **no — corrected 2026-08-29**, only the 1B is on disk | same family, no unit; would need downloading, and the 1B's adequacy failures are not a size problem the 12B obviously fixes |
 | **Hy-MT2-7B** (`tencent/Hy-MT2-7B-GGUF`) | **no** | **try this one first.** Same trained special-instruction support, vendor-published GGUF (no conversion step), small enough to be a cheap experiment |
 | **Hy-MT2-30B-A3B** (Tencent, HF) | **no** | the same idea at ~18 GiB. Only worth the download if the 7B's *quality* falls short — not for speed |
 
