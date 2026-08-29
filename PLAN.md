@@ -319,7 +319,7 @@ cannot locate and would (correctly) fail the whole job over. And it proposed the
 word `IBAN` as an account number — a harmless false positive that costs one untick,
 which is the trade the whole design makes on purpose.
 
-## Phase 5 — the regex tool
+## Phase 5 — the regex tool ✅ DONE 2026-08-29
 
 Right instinct, wrong shape as originally sketched: not a chatbot. There is no
 specialist regex model worth chasing on HF; the good ones are general models. But
@@ -351,6 +351,27 @@ regex is the most verifiable task on the list, so make the *loop* the product.
   something untested.
 - A prompt engineered to produce `(a+)+$` against a long non-matching input fails
   that candidate on timeout and the request still returns.
+
+Both pass. `tests/phase5_acceptance.sh` runs the offline half (the runner, the timeout,
+the parser, and the loop's contract that a pattern is never returned before it passes);
+`--cases` runs the ten against `:8092`. Measured 2026-08-29, thinking off:
+
+    9/10 solved, 1 honestly unsolved, 0 wrong
+
+Most solved in one or two rounds and 1–13 s. The unsolved one ("words ending in -ing",
+with `'ing '` as a negative under `fullmatch`) ran all six rounds, tried 23 candidates,
+and returned nothing — which is the behaviour the acceptance asks for. **`0 wrong` is
+the number that matters**: it counts patterns returned that do not pass the user's own
+examples, and it is the one thing this design exists to make impossible.
+
+**Found in that run, and worth more than the score.** Given one positive example and no
+useful negative, the model answered `^8801015009087$` — the example itself, anchored. It
+passes honestly and generalises to nothing, and no verifier can catch that, because the
+pattern does exactly what was asked and the user asked for too little. So the result page
+warns when the winning pattern embeds an example literally, when only one string had to
+match, or when nothing had to be rejected (`overfit_warnings`). Same rule as the
+redaction tool's "candidate" wording: where the check cannot cover a property the user
+assumes, say so where they will read it.
 
 ## Phase 6 — the paraphrase / translate tool
 

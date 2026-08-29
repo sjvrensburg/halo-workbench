@@ -13,8 +13,9 @@ verifier that runs on every request:
 | **regex** | give examples, get a regex | your examples, actually executed against the pattern |
 | **translate** | zh↔en translate/paraphrase, protecting spans you mark | protected spans round-trip byte-identical; residual-script check |
 
-**Status: phase 4.** Job queue, marker and assisted redaction work; the service is
-installed and reachable on the tailnet. Regex and translate are not started. `PLAN.md` is the build plan; `CLAUDE.md` is the decisions.
+**Status: phase 5.** Job queue, marker, assisted redaction and regex-from-examples
+work; the service is installed and reachable on the tailnet. Translate is not started
+(phase 6 opens with a bake-off, not a build). `PLAN.md` is the build plan; `CLAUDE.md` is the decisions.
 
 ## Run it (development)
 
@@ -31,6 +32,8 @@ Then `http://localhost:8093/marker` to convert a PDF. Acceptance tests:
 tests/phase1_acceptance.sh    # the queue: serialisation, and kill -9 recovery
 tests/phase2_acceptance.sh    # marker: what the sidecar verifier refuses (no GPU needed)
 tests/phase4_acceptance.sh    # redact: patterns, the verifier, and pdftotext on the output
+tests/phase5_acceptance.sh    # regex: the runner and the loop's contract
+tests/phase5_acceptance.sh --cases   # ...plus ten real cases against :8092
 ```
 
 ## Run it (resident) — installed 2026-08-29

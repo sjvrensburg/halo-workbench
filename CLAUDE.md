@@ -90,6 +90,9 @@ curl -s localhost:8092/props                             # tune prompts against 
   **CPU**, so it is the one model here that does not contend for the GPU. It proposes;
   it never decides. `:8092` with `enable_thinking: false` is the fallback, and the page
   always says which one ran.
+- `app/regex_synth.py`, `app/regex_runner.py` — generate-and-test. The runner is a
+  separate process on purpose: `re` has no timeout and cannot be interrupted, so the
+  only way to survive catastrophic backtracking is to kill something.
 - `app/views.py`, `app/templates/` — the shared Jinja environment and the pages.
 - `app/jobs.py` — the job store and the one worker thread. Tools register a handler
   with `@jobs.register("name")`; it either returns (`done`) or raises (`failed`).
