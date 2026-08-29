@@ -1,0 +1,59 @@
+# llama-server unit for Hy-MT2-7B -- the translation model the workbench uses (:8094).
+#
+#   cp config/llama-hymt2.service ~/.config/systemd/user/
+#   systemctl --user daemon-reload
+#   systemctl --user start llama-hymt2        # NOT enable: on-demand by policy
+#
+# Add to halo-prep's config/models.conf by hand (nothing generates it):
+#   hymt2-7b|llama-hymt2.service|8094|~6|translation
+#
+# Group `translation`, matching MiLMMT, so model-switch.sh never leaves two translators
+# fighting for GTT and never stops Hermes's or Open Notebook's model to start this one.
+#
+# ON-DEMAND, NOT ENABLED. Three units are already resident (:8092, :8088, :8086) and the
+# operator moved things off auto-start twice in August under GTT pressure. The workbench
+# starts nothing itself; a translate job with this port down must say so plainly.
+#
+# :8094 and not :8089: that port belongs to MiLMMT-46-1B, which ../anti-watermark-mcp
+# pins by unit name through AWM_TRANSLATOR_MODEL. Do not take it.
+#
+# Chosen by the phase 6a bake-off, 2026-08-29 -- docs/translation-bakeoff.md. 10/10 on
+# the mechanical checks at 1.5 s per paragraph, adequacy equal to Ornith-35B, and it does
+# not queue behind Open Notebook the way :8088 does.
+
+[Unit]
+Description=llama-server — Hy-MT2-7B (halo-workbench translation, :8094)
+
+[Service]
+Type=exec
+# Flags follow llama-milmmt.service, which follows halo-prep's conventions:
+# --load-mode dio (not -dio), --parallel 1, no AMD_SERIALIZE_KERNEL, no
+# HSA_OVERRIDE_GFX_VERSION on ROCm 7.1.
+#
+# --ctx-size 32768: this app chunks at ~1500 characters (see app/translation.py), so the
+# window is never the constraint; a larger one would hold GTT for nothing.
+#
+# --jinja: the GGUF ships Hy-MT2's own chat template and the instruction shapes on its
+# model card are written for it. The workbench uses sentinels rather than those
+# instructions (the bake-off measured 10/10 against 8/10), but the template still has to
+# be correct for the model to answer at all.
+ExecStart=/home/stefan/src/llama.cpp/build-vulkan/bin/llama-server \
+  --model /home/stefan/models/hymt2-7b/HY-MT2-7B-Q6_K.gguf \
+  --n-gpu-layers 999 \
+  --flash-attn on \
+  --cache-type-k q8_0 \
+  --cache-type-v q8_0 \
+  --load-mode dio \
+  --ctx-size 32768 \
+  --parallel 1 \
+  --batch-size 2048 \
+  --ubatch-size 512 \
+  --host 127.0.0.1 \
+  --port 8094 \
+  --alias hymt2-7b \
+  --jinja
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=default.target

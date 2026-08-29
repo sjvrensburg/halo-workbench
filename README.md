@@ -13,9 +13,9 @@ verifier that runs on every request:
 | **regex** | give examples, get a regex | your examples, actually executed against the pattern |
 | **translate** | zh↔en translate/paraphrase, protecting spans you mark | protected spans round-trip byte-identical; residual-script check |
 
-**Status: phase 5.** Job queue, marker, assisted redaction and regex-from-examples
-work; the service is installed and reachable on the tailnet. Translate is not started
-(phase 6 opens with a bake-off, not a build). `PLAN.md` is the build plan; `CLAUDE.md` is the decisions.
+**Status: phase 6 — all four tools work.** Job queue, marker, assisted redaction,
+regex-from-examples, and translate/rewrite; the service is installed and reachable on
+the tailnet. `PLAN.md` is the build plan; `CLAUDE.md` is the decisions.
 
 ## Run it (development)
 
@@ -34,6 +34,15 @@ tests/phase2_acceptance.sh    # marker: what the sidecar verifier refuses (no GP
 tests/phase4_acceptance.sh    # redact: patterns, the verifier, and pdftotext on the output
 tests/phase5_acceptance.sh    # regex: the runner and the loop's contract
 tests/phase5_acceptance.sh --cases   # ...plus ten real cases against :8092
+tests/phase6_acceptance.sh    # translate: spans, the checks, the vendored masker's drift guard
+tests/phase6_acceptance.sh --live    # ...plus a real round trip through :8094
+```
+
+The translation model is on-demand and this app never starts it:
+
+```bash
+cp config/llama-hymt2.service ~/.config/systemd/user/
+systemctl --user daemon-reload && systemctl --user start llama-hymt2   # :8094
 ```
 
 ## Run it (resident) — installed 2026-08-29

@@ -93,6 +93,13 @@ curl -s localhost:8092/props                             # tune prompts against 
 - `app/regex_synth.py`, `app/regex_runner.py` — generate-and-test. The runner is a
   separate process on purpose: `re` has no timeout and cannot be interrupted, so the
   only way to survive catastrophic backtracking is to kill something.
+- `app/protect.py` — **vendored** from `../anti-watermark-mcp`, sentinel forms and all.
+  Do not edit it: its sha256 is checked against the source by phase 6's acceptance
+  script. Layer around it instead — `translation.mask_all` shows how and why.
+- `app/translation.py` — chunking, language detection, and the checks. `mask_all`'s
+  ordering comment is load-bearing; two shipped-and-caught bugs are recorded in it.
+- `app/tools/translate.py` — both modes. Same language on both sides means rewrite, and
+  that routes to a different model, not just a different prompt.
 - `app/views.py`, `app/templates/` — the shared Jinja environment and the pages.
 - `app/jobs.py` — the job store and the one worker thread. Tools register a handler
   with `@jobs.register("name")`; it either returns (`done`) or raises (`failed`).
@@ -121,7 +128,7 @@ The four verifiers, concretely:
 | marker | the `.marker-ok` provenance sidecar, checksum-matched against the `.md` |
 | redact | re-extract the output text — `pdftotext` included — and confirm no removed span survives it |
 | regex | the user's own positive/negative examples, executed |
-| translate | protected spans present once and in order, plus a residual-script check |
+| translate | protected spans present as often as the source has them, plus residual-script and passthrough checks (a rewrite adds: no number or citation changed) |
 
 If you find yourself adding a code path that returns a result the verifier did not
 pass, stop. Fail the job instead.

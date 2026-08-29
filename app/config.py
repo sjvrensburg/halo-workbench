@@ -63,14 +63,30 @@ PII_MODEL_DIR = Path(
 # :8088 is Ornith-1.5-35B-A3B, Open Notebook's worker -- prose, and deliberately NOT
 # given the terse splice, since terseness is a defect in prose output.
 #
-# PROVISIONAL. Translation is zh<->en (operator, 2026-08-29) and a general chat model
-# is the fallback, not the plan: a purpose-built MT model already sits on disk at
-# :8089 (MiLMMT-46-1B, on-demand, owned by ../anti-watermark-mcp), and Hy-MT2-30B-A3B
-# is a candidate for its trained do-not-translate instructions. PLAN.md phase 6a is a
-# bake-off that decides this value; do not build against it until that has run.
+# DECIDED by the phase 6a bake-off, 2026-08-29 (docs/translation-bakeoff.md): Hy-MT2-7B
+# on :8094, an on-demand unit this repo owns (config/llama-hymt2.service). 10/10 on the
+# mechanical checks at 1.5 s per paragraph, adequacy equal to Ornith-35B, and it does not
+# queue behind Open Notebook the way :8088 does. Started on demand and never by this app:
+# `systemctl --user start llama-hymt2`.
 TRANSLATE_ENDPOINT = os.environ.get(
-    "WORKBENCH_TRANSLATE_ENDPOINT", "http://127.0.0.1:8088"
+    "WORKBENCH_TRANSLATE_ENDPOINT", "http://127.0.0.1:8094"
 )
+
+# Rephrase is a different job with a different model. An MT model cannot rewrite English
+# into better English -- MiLMMT is a pure completion MT model and Hy-MT2 is MT-only -- so
+# same-language work goes to :8088, Ornith-1.5-35B-A3B, which is prose-shaped and
+# deliberately NOT given the terse splice. It is Open Notebook's worker, so this queues
+# behind it; that is accepted, not a bug to fix.
+REPHRASE_ENDPOINT = os.environ.get("WORKBENCH_REPHRASE_ENDPOINT", "http://127.0.0.1:8088")
+
+# Where style guides are read from, in order. A guide is a markdown file -- a SKILL.md
+# works as-is -- used as the instruction for a rewrite. The Claude skills directory is
+# included read-only so a skill like academic-humanizer can be used without copying it,
+# and nothing here ever writes to those paths.
+STYLE_GUIDE_DIRS = [
+    Path(__file__).resolve().parent.parent / "docs/style-guides",
+    Path.home() / ".claude/skills",
+]
 
 # Neither server auto-restarts on demand and neither is started by this app. If one
 # is stopped, the tool page must say so plainly rather than hanging on a refused

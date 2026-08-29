@@ -1,0 +1,191 @@
+{% extends "base.html" %}
+{% block title %}translate — halo-workbench{% endblock %}
+{% block heading %} <span class="muted">/ translate</span>{% endblock %}
+{% block body %}
+<style>
+ /* One workspace, two panes. Stacks on a phone or an iPad in portrait, which is where
+    this actually gets used. */
+ .panes{display:grid;grid-template-columns:1fr 1fr;gap:.75rem}
+ @media (max-width:44rem){ .panes{grid-template-columns:1fr} }
+ .panes textarea, .out{
+   width:100%;min-height:11rem;padding:.6rem;border:1px solid #8884;border-radius:8px;
+   /* 16px minimum: anything smaller makes iOS Safari zoom the page on focus, every
+      time, and the swap button then sits off-screen. */
+   font:16px/1.5 system-ui,sans-serif;background:transparent;color:inherit;resize:vertical}
+ .out{white-space:pre-wrap;overflow-y:auto;background:#8881}
+ .bar{display:flex;gap:.5rem;align-items:center;margin:.75rem 0;flex-wrap:wrap}
+ .swap{border:1px solid #8884;background:transparent;color:inherit;border-radius:8px;
+   padding:.35rem .6rem;font-size:1.1rem;cursor:pointer;line-height:1}
+ .swap:hover{background:#8882}
+ .checks{display:flex;gap:1rem;flex-wrap:wrap;margin:.4rem 0;font-size:.9rem}
+ .pass::before{content:"✓ ";color:#2a7}
+ .fail::before{content:"✗ ";color:#c33}
+ .spans{font-size:.9rem}
+ mark{background:#fd83;color:inherit;border-radius:3px;padding:0 .15em}
+</style>
+
+<p>Translate between English and Chinese, or <strong>set both sides to the same language
+to rewrite instead</strong>. Spans you protect survive either way — they are substituted
+out before the model sees the text and put back afterwards.</p>
+
+<form method="post" action="/translate" id="f">
+  <div class="bar">
+    <select name="source" id="source">
+      <option value="auto">Detect language</option>
+      <option value="en">English</option>
+      <option value="zh">Chinese</option>
+    </select>
+    <button class="swap" type="button" id="swap" title="Swap the two sides">⇄</button>
+    <select name="target" id="target">
+      <option value="en">English</option>
+      <option value="zh">Chinese</option>
+    </select>
+    <span class="muted" id="mode">translate</span>
+  </div>
+
+  <div class="panes">
+    <textarea name="text" id="text" placeholder="Paste text here…" required>{{ job.params.text if job else "" }}</textarea>
+    <div class="out" id="out">{% if job %}{{ job.result.output or "" }}{% endif %}</div>
+  </div>
+
+  <div class="bar">
+    <button type="submit" id="go">Translate</button>
+    <span class="muted" id="state">{% if job %}{{ job.status }}{% endif %}</span>
+    {% if queued %}<span class="muted">{{ queued }} job(s) ahead</span>{% endif %}
+    <span class="muted">⌘/Ctrl + Enter</span>
+  </div>
+
+  <div id="checks" class="checks">
+    {% if job and job.result.chunks %}
+      {% for check in job.result.chunks[0].checks %}
+        <span class="{{ 'pass' if check.ok else 'fail' }}">{{ check.name }}</span>
+      {% endfor %}
+    {% endif %}
+  </div>
+
+  <details {% if job and job.params.preset or job and job.params.guide %}open{% endif %}>
+    <summary>Rewriting style, and spans to protect</summary>
+    <p class="muted">Style applies when both sides are the same language.</p>
+    <p><label>Preset
+      <select name="preset">
+        {% for key in presets %}
+        <option value="{{ key }}" {% if job and job.params.preset == key %}selected{% endif %}>{{ key or "none" }}</option>
+        {% endfor %}
+      </select></label>
+      <label>or a guide
+      <select name="guide">
+        <option value="">none</option>
+        {% for guide in guides %}
+        <option value="{{ guide.id }}" {% if job and job.params.guide == guide.id %}selected{% endif %}>{{ guide.name }}</option>
+        {% endfor %}
+      </select></label>
+    </p>
+    <p class="muted">A guide is any markdown file of editorial rules — a skill's
+      <code>SKILL.md</code> works as one. It runs in two passes: the guide is applied to
+      list what is wrong, then the rewrite fixes exactly that, and you see the list.</p>
+    <p><label>Always protect these, one per line — names, product names, anything that
+      must come through untouched<br>
+      <textarea name="extra_spans" rows="3" style="width:100%">{{ job.params.extra_spans | join("\n") if job else "" }}</textarea></label></p>
+    <p class="muted">Citations, LaTeX, maths, numbers and escapes are protected
+      automatically. Protecting a span means <em>do not translate it</em> — so protecting
+      「新华社」 in a Chinese→English job leaves 「新华社」 in the English.</p>
+  </details>
+</form>
+
+{% if job and job.result.audit %}
+<h2>What the guide found</h2>
+<pre>{{ job.result.audit }}</pre>
+{% endif %}
+
+{% if job and job.status == "failed" %}
+<div class="card">
+  <p><strong>Did not pass its checks:</strong> {{ job.error }}</p>
+  <p class="muted">Nothing here is offered as a finished translation. The paragraphs are
+     shown so you can see where it broke — a mangled span is never quietly patched.</p>
+</div>
+{% endif %}
+
+{% if job and job.result.chunks and job.result.chunks | length > 1 %}
+<h2>Paragraph by paragraph</h2>
+{% for chunk in job.result.chunks %}
+<div class="card">
+  <p><strong>{{ loop.index }}</strong>
+    {% for check in chunk.checks %}
+      <span class="{{ 'pass' if check.ok else 'fail' }}" title="{{ check.detail }}">{{ check.name }}</span>
+    {% endfor %}
+  </p>
+  <div class="out">{{ chunk.output }}</div>
+  {% for check in chunk.checks if not check.ok %}
+    <p class="warn">{{ check.name }}: {{ check.detail }}</p>
+  {% endfor %}
+</div>
+{% endfor %}
+{% endif %}
+
+<script>
+// No build step, no framework: this is a swap button and a poller.
+const $ = (id) => document.getElementById(id);
+const source = $("source"), target = $("target"), mode = $("mode");
+
+function refreshMode() {
+  // Same language on both sides IS the rewrite mode -- one control, two tools.
+  const same = source.value !== "auto" && source.value === target.value;
+  mode.textContent = same ? "rewrite (same language)" : "translate";
+  $("go").textContent = same ? "Rewrite" : "Translate";
+}
+source.onchange = target.onchange = refreshMode;
+
+$("swap").onclick = () => {
+  const out = $("out").textContent.trim();
+  if (source.value === "auto") source.value = target.value === "en" ? "zh" : "en";
+  [source.value, target.value] = [target.value, source.value];
+  // Carry the result back into the input, the way a translation UI should -- but keep
+  // the original one keystroke away rather than destroying it.
+  if (out) {
+    const previous = $("text").value;
+    $("text").value = out;
+    $("out").textContent = previous;
+  }
+  refreshMode();
+};
+
+$("text").addEventListener("keydown", (event) => {
+  if ((event.metaKey || event.ctrlKey) && event.key === "Enter") $("f").requestSubmit();
+});
+
+{% if job %}
+// Poll while the job runs. Deliberately not translate-as-you-type: every keystroke would
+// queue a GPU job on a box whose queue is one deep and shared with Hermes.
+const jobId = "{{ job.id }}";
+async function poll() {
+  const response = await fetch(`/translate/${jobId}.json`, {cache: "no-store"});
+  const data = await response.json();
+  $("state").textContent = data.status + (data.elapsed ? ` · ${Math.round(data.elapsed)}s` : "");
+  if (data.output) $("out").textContent = data.output;
+  if (data.chunks.length) {
+    $("checks").innerHTML = data.chunks[0].checks
+      .map(c => `<span class="${c.ok ? "pass" : "fail"}" title="${c.detail}">${c.name}</span>`)
+      .join("");
+  }
+  if (data.status === "queued" || data.status === "running") setTimeout(poll, 400);
+  else if (data.status === "failed" && !document.querySelector(".card")) location.reload();
+}
+if ("{{ job.status }}" === "queued" || "{{ job.status }}" === "running") poll();
+{% endif %}
+refreshMode();
+{% if job %}source.value = "{{ job.params.source }}"; target.value = "{{ job.params.target }}"; refreshMode();{% endif %}
+</script>
+
+{% if jobs %}
+<h2>Recent</h2>
+<table>
+  {% for entry in jobs %}
+  <tr>
+    <td><a href="/translate/{{ entry.id }}">{{ entry.params.source }}→{{ entry.params.target }}</a></td>
+    <td class="muted">{{ (entry.params.text or "") | truncate(46) }}</td>
+    <td><span class="status {{ entry.status }}">{{ entry.status }}</span></td>
+  </tr>
+  {% endfor %}
+</table>
+{% endif %}
+{% endblock %}

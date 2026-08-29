@@ -11,7 +11,7 @@ from fastapi import FastAPI
 from fastapi.responses import HTMLResponse
 
 from app import config, jobs
-from app.tools import marker, redact, regex
+from app.tools import marker, redact, regex, translate
 
 
 @asynccontextmanager
@@ -46,6 +46,7 @@ app = FastAPI(title="halo-workbench", docs_url=None, redoc_url=None, lifespan=li
 app.include_router(marker.router)
 app.include_router(redact.router)
 app.include_router(regex.router)
+app.include_router(translate.router)
 
 
 @app.get("/healthz")
@@ -80,6 +81,6 @@ def index() -> str:
   <li><a href="/marker">PDF &rarr; markdown (marker)</a></li>
   <li><a href="/redact">Assisted redaction &mdash; candidates, reviewed by you</a></li>
   <li><a href="/regex">Regex from examples &mdash; tested against them before you see it</a></li>
-  <li class="todo">Translate with protected spans &mdash; PLAN.md phase 5</li>
+  <li><a href="/translate">Translate zh&harr;en, or rewrite in place</a></li>
 </ul>
 """

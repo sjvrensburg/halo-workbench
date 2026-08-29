@@ -449,7 +449,7 @@ good enough", which would make this phase nearly free. **If none of them is good
 so and stop.** A translation tool that quietly produces poor Chinese is worse than no
 translation tool.
 
-### 6b. The tool
+### 6b. The tool ✅ DONE 2026-08-29
 
 - Input: text, plus regex patterns (and/or literal selections) marking spans that must
   survive untranslated — citations, variable names, product names, LaTeX.
@@ -476,6 +476,43 @@ translation tool.
 - A sentinel-hostile input (sentinels adjacent to CJK punctuation, one at the very
   start, one at the very end) either round-trips or fails visibly.
 - A paragraph the model half-translates is caught by check 2 rather than returned.
+
+All pass — `tests/phase6_acceptance.sh` (offline) and `--live` for a real round trip.
+Built as **one window with a swap control**, on the operator's UX ask (2026-08-29):
+source and target selectors with a ⇄ between them, and **when both sides are the same
+language it rewrites instead of translating**. One control, two tools, no second page.
+
+Decisions taken while building it:
+
+- **The masker is vendored, not imported** (`app/protect.py`, from
+  `../anti-watermark-mcp`), because its measurements are the value and a paraphrase would
+  lose them. Vendoring buys drift, so the source's sha256 is recorded and re-checked by
+  the acceptance script — a copy that silently diverges becomes a test failure with a
+  diff to read.
+- **Rewriting goes to `:8088`, translation to `:8094`.** An MT model cannot rewrite
+  English into better English; the language pair picks the model, not just the prompt.
+- **Style presets in-repo, plus any markdown file as a guide** — a skill's `SKILL.md`
+  works as one, `academic-humanizer` included. A guide runs in **two passes**: it lists
+  what is wrong, then the rewrite fixes exactly that, and the user sees the list. One
+  pass would be a shallow imitation of what is actually a read-audit-edit procedure.
+- **A rewrite gets a fourth check the translation does not need:** every number and every
+  citation must come back identical. That is the one part of an editorial rewrite that
+  can be verified, and it is the guides' own promise — academic-humanizer says it "never
+  changes a number, result, or citation". A rewrite that edits one fails the job.
+- **No translate-as-you-type.** Explicit button and ⌘⏎: every keystroke would queue a GPU
+  job on a box whose queue is one deep and shared with Hermes.
+
+Two bugs the verifier caught during the build, both of which would have shipped silently
+without it:
+
+1. `finance@example.co.za` came back as `financeZ3Z`. The vendored masker is written for
+   LaTeX, where `@name` is a citation key, so its rule matched the domain and masked half
+   the address — leaving a sentinel glued to a letter, which its own restoration rule
+   deliberately refuses to touch. Contact details are now protected *whole*, before that
+   masker runs, reusing the redaction tool's pattern layer rather than writing a third one.
+2. The first fix used `Z900Z` sentinels, and `protect.mask`'s `number` rule then masked
+   the `900` *inside* them; the model dropped what was left. Literal spans are now staged
+   as digit-free `ZQxxZ` tokens and renumbered into the same space afterwards.
 
 ---
 
