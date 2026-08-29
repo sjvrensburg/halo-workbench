@@ -281,7 +281,10 @@ def _job_or_404(job_id: str) -> jobs.Job:
 def index(request: Request):
     recent = [j for j in jobs.all_jobs() if j.tool == "marker"][:20]
     return templates.TemplateResponse(
-        request, "marker_index.html", {"jobs": recent, "queued": jobs.queue_depth()}
+        request,
+        "marker_index.html",
+        {"jobs": recent, "queued": jobs.queue_depth()},
+        headers={"cache-control": "no-store"},  # the recent-jobs list goes stale too
     )
 
 
@@ -303,6 +306,13 @@ def status(request: Request, job_id: str):
         request,
         "marker_job.html",
         {"job": job, "stderr": _stderr_tail(job) if job.status == jobs.FAILED else ""},
+        # OBSERVED 2026-08-29 from an iPad: the page kept reading "running, 0s" for
+        # minutes after the job finished, while the journal showed Safari fetching it
+        # and getting 200. A page whose whole job is to change under a meta refresh
+        # must say so, or a mobile browser will serve its own copy back to the user and
+        # the tool looks hung -- which is the one failure mode this page exists to
+        # prevent.
+        headers={"cache-control": "no-store"},
     )
 
 
