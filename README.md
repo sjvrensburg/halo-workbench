@@ -9,7 +9,7 @@ verifier that runs on every request:
 | Tool | Does | Verified by |
 |---|---|---|
 | **marker** | upload a PDF, get markdown back | marker's own checksummed provenance sidecar |
-| **redact** | strip PII from a document | re-extract the output and search it for every span removed |
+| **redact** | strip PII from a document (markdown or true-redacted PDF) | re-extract the output — `pdftotext` included — and search it for every span removed |
 | **regex** | give examples, get a regex | your examples, actually executed against the pattern |
 | **translate** | zh↔en translate/paraphrase, protecting spans you mark | protected spans round-trip byte-identical; residual-script check |
 

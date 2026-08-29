@@ -65,6 +65,11 @@ pass, stop. Fail the job instead.
   everything found was removed; nothing can prove nothing was missed. Every label the
   user sees must say so. See PLAN.md phase 4 — this is a wording rule with a real
   failure behind it, not a disclaimer.
+- **PDF redaction deletes content; it never draws over it.** PyMuPDF
+  `apply_redactions`, and the acceptance test is `pdftotext` on the *output* finding
+  none of the removed strings. A black rectangle over live text is the classic way this
+  goes wrong and would be the most severe bug this repo could ship. Equally: a
+  confirmed span that cannot be located on the page fails the job — never skip it.
 - **Concurrency 1, and not a config knob.** Every tool here contends for the same GPU
   as three resident llama-server units. Marker additionally spawns its own surya model
   servers (~2.9 GB). This box has **no swap** (phase 2 of halo-prep removes zram) and

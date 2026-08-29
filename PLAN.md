@@ -82,8 +82,11 @@ and it had not), so no tool here can be request/response.
 - Status values: `queued` → `running` → `done` | `failed`. A job that was `running`
   when the process died is `failed` on next startup with `error: "interrupted"` —
   never left `running`, or the UI hangs forever on a job nobody is doing.
-- Retention: prune job dirs older than 7 days on startup. Uploads are the user's
-  documents; do not keep them indefinitely and do not silently delete today's.
+- Retention: prune job dirs older than **7 days** (operator, 2026-08-29) on startup
+  *and* on a timer — startup-only leaves a long-running service never pruning. Uploads
+  are the user's documents; do not keep them indefinitely and do not silently delete
+  today's. Delete the whole job directory, not just the output: the uploaded original
+  is the sensitive half.
 
 **Acceptance**
 
@@ -174,18 +177,44 @@ confidence.
 - **Verifier — re-extract, then search.** After producing output, extract its text
   afresh and assert that no confirmed span survives, in any casing or whitespace
   variant. Fail the job if one does. Report the count of spans removed by category.
-- **Output format: text/markdown out, by default.** Do not hand back the original PDF
-  with black rectangles drawn on it — that is *the* classic redaction failure, since
-  the text sits untouched underneath and `pdftotext` recovers it in one command. If
-  PDF-in/PDF-out is ever wanted, it must use true redaction (PyMuPDF
-  `apply_redactions`, which removes the underlying content stream) and the verifier
-  above must run on the *output PDF's* extracted text before it is offered. Note
-  PyMuPDF is deliberately not installed anywhere on this box today (halo-prep, the
-  `ocr-and-documents` skill rewrite) — installing it into `~/venvs/workbench` is fine,
-  but it is a new dependency and a new attack surface for scanned input.
 - Also redact metadata: PDF `/Info`, XMP, and any author name marker carried through.
   A document whose body is clean and whose properties still say the author's full name
   has not been redacted.
+
+**Output formats — both, in this order (operator, 2026-08-29)**
+
+*4a. Text/markdown out.* Build this first. It has no coordinate problem: the spans are
+substrings and removing a substring is exact. It is also the format that composes with
+`/marker`.
+
+*4b. PDF in, PDF out.* Wanted as an option, so build it — but second, and only behind
+every check below.
+
+- **True redaction only.** PyMuPDF `add_redact_annot` + `apply_redactions`, which
+  removes the underlying content stream. **Never draw a black rectangle over text.**
+  That is *the* classic redaction failure: the text sits untouched underneath and
+  `pdftotext` recovers all of it in one command. If a code path here ever produces a
+  covering shape without deleting content, it is a bug of the highest severity in this
+  repo, not a cosmetic shortcut.
+- **The hard part is span → coordinates, and it fails quietly.** `page.search_for()`
+  will not find a span that the text layer splits across a line break, hyphenates,
+  renders with ligatures, or spaces oddly. The span is *in* the document and *not*
+  findable as a quad. So: **every confirmed span must be located and covered, or the
+  job fails.** An unlocatable span is a failure to report, never a span to skip — a
+  PDF where 9 of 10 names were removed is more dangerous than one where none were,
+  because it looks done.
+- **Verifier runs on the output PDF, not on the plan.** Extract text from the produced
+  file afresh (PyMuPDF *and* `pdftotext`, they disagree) and assert no confirmed span
+  survives. Also assert the file's metadata is clean.
+- **Rasterised / scanned pages have no text layer**, so there is nothing to search and
+  nothing for the verifier to check. Detect this case and say so plainly rather than
+  producing a confident-looking file: the honest options are to run the page through
+  marker/OCR first and redact by OCR coordinates (with the OCR's own error rate now in
+  the blast radius), or to refuse. Refusing is a legitimate answer here.
+- PyMuPDF is deliberately not installed anywhere on this box today (halo-prep, the
+  `ocr-and-documents` skill rewrite pointed away from it). Add it to
+  `~/venvs/workbench` in this phase — its own venv is exactly why that is safe — and
+  note it in `scripts/bootstrap.sh` with a comment saying what needs it.
 
 **Acceptance**
 
@@ -195,8 +224,12 @@ confidence.
   occurrence of a repeated name.
 - A model proposal that does not occur verbatim in the source is dropped, and the drop
   is visible in the job log rather than silent.
-- If PDF output is built: `pdftotext` on the produced PDF finds none of the redacted
-  strings. This test is non-negotiable and is the whole reason PDF output is deferred.
+- **`pdftotext` on the produced PDF finds none of the redacted strings.** Non-negotiable
+  — this single test is what separates real redaction from a picture of redaction.
+- A span deliberately made unlocatable (hyphenated across a line break) fails the job
+  loudly instead of being skipped.
+- A scanned image-only PDF is refused or OCR-routed, never silently returned unchanged.
+- Output PDF metadata (`/Info`, XMP) contains none of the redacted strings.
 
 ## Phase 5 — the regex tool
 
@@ -331,10 +364,10 @@ translation tool.
    tailnet ever gains a second user or a shared node — the upload and redaction pages
    hold the user's real documents, which the inference ports do not.
 2. ~~**Languages**~~ **Decided: Chinese ↔ English. Afrikaans out of scope.**
-3. **Retention**: 7 days for uploaded PDFs is still a guess. Confirm. It matters more
-   now than it did — phase 4 means the job store holds documents specifically because
-   they contain things worth removing.
-4. **PDF-in/PDF-out redaction** (phase 4): wanted, or is markdown output enough?
-   It is most of the work and all of the risk.
+3. ~~**Retention**~~ **Decided: 7 days**, as in phase 1. Keep the pruner honest — the
+   job store holds documents specifically *because* they contain things worth removing,
+   so an upload that outlives its window is the failure mode, not a stale job record.
+4. ~~**PDF-in/PDF-out redaction**~~ **Decided: yes, as an option** — phase 4b, after
+   4a's markdown path works. It is most of the work and all of the risk.
 5. Does anything else want the job queue (batch marker over a directory, whisper
    transcription)? Do not build for it now; just do not make it impossible.
