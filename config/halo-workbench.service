@@ -4,9 +4,15 @@
 #   systemctl --user daemon-reload && systemctl --user enable --now halo-workbench
 #
 # INSTALLED and enabled 2026-08-29 (PLAN.md phase 3). Remote access additionally
-# needs, from the operator:
-#   tailscale serve --bg --http=8093 http://127.0.0.1:8093
-# which lives in tailscaled, not in this repo, and will not survive a rebuild.
+# needs, from the operator, two registrations that live in tailscaled rather than in
+# this repo and will not survive a rebuild:
+#   sudo tailscale serve --bg --http=8093 http://127.0.0.1:8093            # evo-x3:8093
+#   tailscale serve --service=svc:halo-workbench --bg --yes --http=80 \
+#       http://127.0.0.1:8093                                             # halo-workbench/
+# The second is a Tailscale Service and needs three more things this repo does not
+# create: the Service defined in the admin console, a grant in the tailnet policy, and a
+# TAGGED host (a Service host must be tagged; tagging also ends Tailscale SSH to the box
+# unless the policy has a tag:server rule first). ../halo-prep/docs/06 §7 has the lot.
 
 [Unit]
 Description=halo-workbench — specialist local-model tools (:8093)

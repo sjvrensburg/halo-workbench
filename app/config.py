@@ -10,9 +10,11 @@ from pathlib import Path
 VERSION = "0.1.0"
 
 # Port. Duplicated in: config/halo-workbench.service, scripts/dev.sh, README, and --
-# invisibly, outside both repos -- the `tailscale serve --http=8093` registration in
-# tailscaled. A port change means re-running that command by hand; nothing here will
-# tell you it is stale, remote clients will just stop working.
+# invisibly, outside both repos -- TWO registrations in tailscaled: the
+# `tailscale serve --http=8093` one (http://evo-x3:8093) and the Tailscale Service
+# `svc:halo-workbench` (http://halo-workbench/), which proxies port 80 to this one.
+# A port change means re-running both by hand; nothing here will tell you they are
+# stale, remote clients will just stop working.
 PORT = 8093
 
 # Job state. Directories, not a database: survives a restart and can be read with

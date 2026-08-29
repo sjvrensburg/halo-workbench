@@ -27,12 +27,15 @@ does not name one, that tool is not ready to build.
 
 ## Shape
 
-One FastAPI app, one port (**8093**), one systemd user unit, one `tailscale serve`
-registration, four pages. Not four services — see CLAUDE.md "One port".
+One FastAPI app, one port (**8093**), one systemd user unit, four pages. Not four
+services — see CLAUDE.md "One port". Two tailnet registrations, both outside this repo:
+the `tailscale serve` port and, since 2026-08-29, the Tailscale Service
+`svc:halo-workbench` (`http://halo-workbench/`).
 
 ```
   browser (laptop / iPad, over Tailscale)
-        │  http://evo-x3:8093        no auth — tailnet only (operator, 2026-08-29)
+        │  http://halo-workbench/    (or http://evo-x3:8093 — both tailnet only,
+        │                             no auth, operator 2026-08-29)
         ▼
   halo-workbench  (uvicorn, ~/venvs/workbench)
         ├── /marker    → subprocess: halo-prep marker_run.sh   (no LLM of ours)
@@ -192,16 +195,20 @@ halo-prep's `docs/06` §7, `docs/10`'s two port tables and its README now carry 
 as a fifth serve registration — with the note that it is the only one of the five that
 exposes *documents* rather than inference.
 
-**Still outstanding, and it is the operator's:**
+**Done since, both of them (2026-08-29):**
 
 ```bash
-sudo tailscale serve --bg --http=8093 http://127.0.0.1:8093
+sudo tailscale serve --bg --http=8093 http://127.0.0.1:8093            # http://evo-x3:8093
+tailscale serve --service=svc:halo-workbench --bg --yes --http=80 \
+    http://127.0.0.1:8093                                             # http://halo-workbench/
 ```
 
-Until that runs, `tailscale serve status` lists four ports and the box is reachable
-only on loopback. Verification from the laptop is blocked behind it (and the laptop
-was last seen offline 2h before this was written, so it needs doing from there
-afterwards).
+The second is a **Tailscale Service**: a name and a VIP owned by the tailnet rather than
+by this box, so the address survives this app moving to another machine and carries no
+port. It cost more than the command suggests — a Service host must be a *tagged* node, so
+`evo-x3` now carries `tag:server`, which moves the device's ownership from the user to the
+tailnet and would have ended Tailscale SSH to the box had the policy not gained a
+`tag:server` rule first. See `../halo-prep/docs/06` §7 and pitfall #38.
 
 Do phases 1–3 and stop. Get real use out of marker before building anything else —
 if the other three never get built, the project has already paid for itself.
