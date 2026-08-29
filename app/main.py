@@ -4,6 +4,7 @@ Routing, config, the health check and the job queue's lifecycle. The tools thems
 are PLAN.md phases 2, 4 and 5; each registers a handler with `app.jobs`.
 """
 
+import logging
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
@@ -22,9 +23,16 @@ async def lifespan(_: FastAPI):
     they happen here rather than in a route or at import time (import runs twice
     under `uvicorn --reload`).
     """
-    # A job the previous process was running is holding GPU memory in its cgroup right
-    # now, and the first thing this service will do is hand marker the GPU again.
-    marker.reap_scopes_for(jobs.start())
+    try:
+        # A job the previous process was running is holding GPU memory in its cgroup
+        # right now, and the first thing this service will do is hand marker the GPU
+        # again.
+        marker.reap_scopes_for(jobs.start())
+    except jobs.StateDirBusy as exc:
+        # One line the operator can act on, then fail: a second instance that carried
+        # on would recover the first one's live job out from under it.
+        logging.getLogger("uvicorn.error").error("refusing to start — %s", exc)
+        raise
     try:
         yield
     finally:

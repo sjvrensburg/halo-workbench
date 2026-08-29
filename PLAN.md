@@ -160,11 +160,13 @@ KILL` mid-conversion leaves two surya servers and a live scope; the restart mark
 job `failed / interrupted`, stops that job's scope, and `pgrep -f surya` is empty. On
 the success path, empty 30 s after the job finishes.
 
-**Known limitation, for phase 3.** Two instances sharing a state directory (`dev.sh`
-alongside the installed unit) will fight: uvicorn runs the lifespan *before* it binds
-the port, so the second instance recovers and reaps the first one's live job even
-though it then exits with "address already in use". Concurrency 1 assumes one
-instance; nothing enforces it yet.
+**Fixed 2026-08-29.** Two instances sharing a state directory used to fight: uvicorn
+runs the lifespan *before* it binds the port, so a second instance recovered and reaped
+the first one's live job on its way to exiting with "address already in use". `jobs`
+now takes an exclusive `flock` on `<state>/lock` as the first thing `start()` does,
+before recovery touches a single `meta.json`, and a second instance exits 3 with a
+message naming the holding pid. flock rather than a pid file, so a `kill -9` cannot
+leave a stale lock. Covered by `tests/phase1_acceptance.sh` check 3.
 
 ## Phase 3 — reachability
 

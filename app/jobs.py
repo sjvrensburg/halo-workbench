@@ -17,6 +17,7 @@ pressure (halo-prep pitfall #17).
 
 from __future__ import annotations
 
+import fcntl
 import json
 import logging
 import os
@@ -62,11 +63,61 @@ _META_LOCK = threading.Lock()  # meta.json writes come from both the worker and 
 _STOP = threading.Event()
 _WORKER: threading.Thread | None = None
 _PRUNER: threading.Thread | None = None
+_LOCK_FD: int | None = None
+
+
+def _acquire_lock() -> None:
+    """Take an exclusive flock on the state directory, or refuse to start.
+
+    Concurrency 1 is the rule this whole module implements, and until now nothing
+    enforced *one instance*. Two of them sharing a state directory fight in ways that
+    destroy work rather than merely duplicating it: the second one's recovery marks
+    the first one's in-flight job `failed / interrupted` and reaps its cgroup, killing
+    a conversion that was twenty minutes in. `dev.sh` next to the installed unit is
+    all it takes, and uvicorn runs the lifespan BEFORE it binds the port -- so the
+    second instance does that damage on its way to exiting with "address already in
+    use", which reads like a harmless mistake and is not one.
+
+    flock rather than a pid file: the kernel drops it when the process dies, so a
+    `kill -9` -- which is a supported way to stop this service, and an acceptance
+    test -- cannot leave a stale lock that needs clearing by hand.
+    """
+    global _LOCK_FD
+
+    config.STATE_DIR.mkdir(parents=True, exist_ok=True)
+    fd = os.open(config.STATE_DIR / "lock", os.O_RDWR | os.O_CREAT, 0o644)
+    try:
+        fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except OSError:
+        holder = os.read(fd, 64).decode(errors="replace").strip() or "unknown"
+        os.close(fd)
+        raise StateDirBusy(
+            f"another halo-workbench (pid {holder}) is already using "
+            f"{config.STATE_DIR}. Only one instance may run against a state "
+            f"directory — check `systemctl --user status halo-workbench`, or point "
+            f"this one somewhere else with WORKBENCH_STATE_DIR."
+        ) from None
+
+    # The pid is only for the message above; the lock is the flock, not this content.
+    os.ftruncate(fd, 0)
+    os.write(fd, f"{os.getpid()}\n".encode())
+    _LOCK_FD = fd
+
+
+def _release_lock() -> None:
+    global _LOCK_FD
+    if _LOCK_FD is not None:
+        os.close(_LOCK_FD)  # closing drops the flock
+        _LOCK_FD = None
 
 
 def _now() -> str:
     """UTC, seconds, ISO-8601 -- the format meta.json stores and _prune parses."""
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
+
+
+class StateDirBusy(RuntimeError):
+    """Another instance already holds this state directory. Startup must not continue."""
 
 
 class JobError(Exception):
@@ -409,6 +460,8 @@ def start() -> list[str]:
     """
     global _WORKER, _PRUNER
 
+    # First, before recovery touches a single meta.json.
+    _acquire_lock()
     _STOP.clear()
     interrupted = _recover()
     prune()
@@ -434,3 +487,4 @@ def stop(timeout: float = 5.0) -> None:
     for thread in (_WORKER, _PRUNER):
         if thread is not None:
             thread.join(timeout=timeout)
+    _release_lock()

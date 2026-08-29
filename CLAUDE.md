@@ -85,7 +85,9 @@ curl -s localhost:8092/props                             # tune prompts against 
 - `app/jobs.py` — the job store and the one worker thread. Tools register a handler
   with `@jobs.register("name")`; it either returns (`done`) or raises (`failed`).
   There is no third outcome on purpose — a result the verifier did not pass must
-  raise. Startup reaps `running` jobs as `interrupted` and re-queues `queued` ones.
+  raise. Startup takes an exclusive `flock` on the state directory (a second instance
+  refuses to start rather than recovering the first one's live job), reaps `running`
+  jobs as `interrupted` and re-queues `queued` ones.
 - `scripts/`, `config/halo-workbench.service` — the venv, dev server, and unit.
 
 Build order and per-phase acceptance tests are in `PLAN.md`; phase 0 (scaffold) is
