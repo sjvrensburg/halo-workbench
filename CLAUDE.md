@@ -1,6 +1,7 @@
 # CLAUDE.md
 
-Guidance for Claude Code working in this repository.
+This file provides guidance to Claude Code (claude.ai/code) when working with code in
+this repository.
 
 ## What this is
 
@@ -30,6 +31,58 @@ laptop nothing here works — no models, no marker, no GPU.
 operator; in Claude Code suggest they prefix the command with `!` so its output lands
 in the conversation.
 
+## Commands
+
+```bash
+scripts/bootstrap.sh              # create ~/venvs/workbench (--force recreates it)
+scripts/dev.sh                    # foreground uvicorn on 127.0.0.1:8093, --reload
+curl -s localhost:8093/healthz    # {"status":"ok","version":...} -- liveness only
+```
+
+There is no requirements file, no lockfile and no lint or test runner yet: the
+dependency list lives in `scripts/bootstrap.sh` (fastapi, uvicorn, jinja2,
+python-multipart) and `tests/` is empty. Add a dependency by editing that script, so
+`--force` still reproduces the venv from nothing. The venv is deliberately *not*
+`~/venvs/marker` — see the script's header for why.
+
+Acceptance tests live in `PLAN.md`, one per phase, and are run by hand against the
+running app. That is the intended shape: the checks that matter here are the
+per-request verifiers, not a suite that runs at build time.
+
+The unit is written but **not installed** (PLAN.md phase 3 installs it, after marker
+works):
+
+```bash
+cp config/halo-workbench.service ~/.config/systemd/user/
+systemctl --user daemon-reload && systemctl --user enable --now halo-workbench
+systemctl --user status halo-workbench          # and: journalctl --user -u halo-workbench -f
+```
+
+Checking the model servers this app depends on — neither is started by this app, and
+a stopped one must produce a plain message on the tool page, never a hang:
+
+```bash
+systemctl --user is-active llama-ornith llama-ornith35   # :8092 and :8088
+curl -s localhost:8092/props                             # tune prompts against this
+```
+
+## Code map
+
+- `app/config.py` — **read this first.** It is not settings; it is every value shared
+  with something outside the process (the port, the marker wrapper's path, the two
+  model endpoints, the state dir), and each one names its other half, because nothing
+  validates the duplication. `TRANSLATE_ENDPOINT` is explicitly provisional pending
+  the phase 6a bake-off.
+- `app/main.py` — FastAPI app, currently `/` and `/healthz` only. `/healthz` must
+  never touch a model server: it has to stay answerable while `:8092` is mid-turn.
+- `app/tools/` — empty; one module per tool, each pairing its work with its verifier.
+- `app/jobs.py` — does not exist yet; PLAN.md phase 1, and nothing else can be built
+  before it, since marker can take ~20 minutes (halo-prep, 2026-08-23).
+- `scripts/`, `config/halo-workbench.service` — the venv, dev server, and unit.
+
+Build order and per-phase acceptance tests are in `PLAN.md`; phase 0 (scaffold) is
+done, phases 1–6 are not started.
+
 ## The rule the whole project is organised around
 
 **Every tool ships a verifier that runs on every request.**
@@ -39,7 +92,7 @@ judged by eye — that is the lesson of halo-prep's whole history, and it is why
 project exists in the shape it does. A feature without a verifier is not a smaller
 version of the feature; it is a different, worse thing that looks the same.
 
-The three verifiers, concretely:
+The four verifiers, concretely:
 
 | Tool | Verifier |
 |---|---|
