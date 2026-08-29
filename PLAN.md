@@ -27,10 +27,12 @@ does not name one, that tool is not ready to build.
 
 ## Shape
 
-One FastAPI app, one port (**8093**), one systemd user unit, four pages. Not four
-services — see CLAUDE.md "One port". Two tailnet registrations, both outside this repo:
-the `tailscale serve` port and, since 2026-08-29, the Tailscale Service
-`svc:halo-workbench` (`http://halo-workbench/`).
+One FastAPI app, one port (**8093**), one systemd user unit, five pages (four built,
+`/hint` planned as phase 7). Not five services — see CLAUDE.md "One port". Two tailnet
+registrations, both outside this repo: the `tailscale serve` port and, since 2026-08-29,
+the Tailscale Service `svc:halo-workbench` (`http://halo-workbench/`). **Phase 7 needs a
+third, and it is a prerequisite rather than a nicety**: an HTTPS registration, because
+the browser will not give a page the camera outside a secure context.
 
 ```
   browser (laptop / iPad, over Tailscale)
@@ -41,9 +43,12 @@ the `tailscale serve` port and, since 2026-08-29, the Tailscale Service
         ├── /marker    → subprocess: halo-prep marker_run.sh   (no LLM of ours)
         ├── /redact    → deterministic patterns FIRST, model as recall booster
         ├── /regex     → llama-server :8092  + generate-and-test loop
-        └── /translate → MT model (phase 6a picks it) + round-trip check
-                │
-                └── all four go through ONE job queue, concurrency 1
+        ├── /translate → MT model (phase 6a picks it) + round-trip check
+        │       │
+        │       └── all four go through ONE job queue, concurrency 1
+        │
+        └── /hint      → llama-server :8097 (olmOCR-2), phase 7, NOT via the queue:
+                         interactive, ephemeral, no stored artefact. Needs HTTPS.
 ```
 
 `/redact` composes with `/marker`: a converted PDF should be redactable in one click
@@ -528,6 +533,140 @@ without it:
 2. The first fix used `Z900Z` sentinels, and `protect.mask`'s `number` rule then masked
    the `900` *inside* them; the model dropped what was left. Literal spans are now staged
    as digit-free `ZQxxZ` tokens and renumbered into the same space afterwards.
+
+---
+
+## Phase 7 — the handwriting hint tool
+
+Requested by the operator 2026-08-29, after the halo-prep search that put olmOCR-2-7B
+on `:8097`. **Not started.**
+
+**What it is, and what it is deliberately not.** The operator sits at work with a
+document camera (visualiser) over a student's script, hits a word they cannot read, and
+wants a second opinion. It is a *hint tool for an ambiguous squiggle*, with the human
+looking at the same ink at the same moment. It is **not** a transcription service, not a
+marking aid, and not a batch pipeline — and that distinction settles most of the design,
+so do not let it drift.
+
+**Why the distinction matters more than it sounds.** halo-prep's search measured
+over-correction as the dominant risk in handwriting OCR: every model tested silently
+"fixes" student spelling, and [arXiv 2604.22774](https://arxiv.org/abs/2604.22774)
+measures that in 42–66% of transcriptions across 15 VLMs, with faithfulness prompting
+worth 4 percentage points and no net gain. **That risk is specific to batch work** —
+a transcript produced now and marked later, where nobody re-reads the ink and a repaired
+misconception disappears. Here the operator is beside the transcript, not downstream of
+it. Same for the two silent-failure modes that disqualified candidates in that search
+(Chandra returning an empty page, Qwen3.8 truncating inside its own reasoning): in a
+batch of 200 scripts one comes back short and nothing says which; in an interactive UI a
+blank result announces itself and you press the button again.
+
+**This tool's verifier is the human, per request, by construction** — which is a
+stronger gate than anything automatic this repo has built, not a weaker one. Do not
+bolt on a synthetic verifier to satisfy the thesis on a technicality. What the thesis
+actually asks is that no quality claim goes unchecked, and here none can.
+
+**Home: a fifth page on `:8093`, not a new service.** See CLAUDE.md "One port". A new
+service would cost a unit, a port, a `tailscale serve` registration, a Tailscale
+Service, and one more thing to forget is not on the tailnet. It also keeps `:8097`
+bound to localhost — the browser talks only to `:8093`, so no second serve
+registration and no auth question.
+
+### 7a. HTTPS first — this is a prerequisite, not a detail
+
+**Do this before writing any of the app, and stop if it cannot be done.**
+`navigator.mediaDevices.getUserMedia` exists only in a **secure context**: HTTPS or
+`localhost`. Every current serve registration is plain HTTP and `tailscale status`
+reports `CertDomains: None`, so from the operator's laptop `http://evo-x3:8093` is
+neither — `navigator.mediaDevices` is `undefined`, with no permission prompt and no
+error worth reading. Every other line of this phase depends on this working.
+
+- Enable *HTTPS Certificates* in the tailnet admin console.
+- `tailscale serve --bg --https=443 http://127.0.0.1:8093` for a real Let's Encrypt
+  cert on `evo-x3.tail80adad.ts.net`.
+- This is a **change outside both repos**, like every other serve registration
+  (halo-prep CLAUDE.md "Served ports live in `tailscaled`"). A rebuilt box loses it.
+  Record it beside the others in halo-prep `docs/06` §7 rather than only here.
+- Note the existing Service name `http://halo-workbench/` is HTTP. Whether the Service
+  can carry HTTPS too, or whether the camera page has to be reached by the
+  `ts.net` name, is the one thing to establish first — it decides the URL the operator
+  actually types.
+
+**Acceptance for 7a alone:** from the laptop, over the tailnet, on the real URL,
+`navigator.mediaDevices.getUserMedia({video:true})` resolves and a frame renders. No
+app, no model. If this fails the phase does not proceed.
+
+### 7b. Capture
+
+**Resolution is the whole ballgame and the one place this can quietly fail.** halo-prep
+measured MiniCPM-V 4.6 at 5/15 on symbols purely because it spends ~700 tokens on a
+page; olmOCR-2 scores 15/15 at ~4,070. A default `getUserMedia` stream is often
+640×480, which would reproduce that failure in the browser **with the good model** and
+look like the model's fault. A bad hint is worse than no hint, because the operator
+spends time evaluating it.
+
+- Enumerate devices and let the operator pick — the laptop's own webcam will be in the
+  list and must not be the default.
+- Request `{ width: {ideal: 3840}, height: {ideal: 2160} }`, and prefer
+  `ImageCapture.takePhoto()` over grabbing the preview stream: doc cams commonly
+  expose a much higher still resolution than their video feed.
+- **Assert what actually arrived.** Show the captured pixel dimensions in the UI and
+  warn below ~2000 px on the long edge. The samples that scored 15/15 were 2851–4096 px.
+- Captures are **ephemeral**: student scripts carry names. Do not write them to the job
+  store, do not reuse phase 1's 7-day retention. In memory, for the life of the request.
+
+### 7c. Crop-first interaction
+
+The primary gesture is **drag a box around the squiggle**, not "transcribe this page".
+olmOCR-2 spends ~4,070 prompt tokens regardless of how much page it is given, so a crop
+of one line is a large effective-resolution gain — for free.
+
+**Do not read this as "band-slicing works".** halo-prep measured band-slicing as a
+failure: bands came back empty and truncated. That was **MiniCPM-specific** — its
+LLaVA-UHD v4 resampler emits a fixed 64 queries per slice, so slicing bought resolution
+and lost content. olmOCR-2 has dynamic resolution and should behave differently.
+**Should. Measure it before relying on it** — one crop, one full page, same word, and
+check the crop is at least as good.
+
+### 7d. Several candidates, not one answer
+
+A hint that offers three readings beats one confident answer, because the operator is
+pattern-matching against ink they can see. This is the one place where the interactive
+framing changes the model settings rather than just the UI copy.
+
+- `llama-olmocr.service` runs `--temp 0`, which is a **batch** decision — every halo-prep
+  measurement behind that unit was greedy. This page should override temperature
+  **per request** rather than change the unit.
+- Two cheap sources of candidates, and they answer different questions: sampling
+  olmOCR-2 several times at temperature, and asking Muse on `:8084` for the same crop.
+  Both scored 15/15 on legible symbols in halo-prep's comparison, so **disagreement
+  between them is a real signal that the squiggle is genuinely ambiguous** — surface it
+  as information, not as an error.
+- If Muse is used, note halo-prep's caveat: it hallucinates fluently inside
+  strikethroughs (it rendered an illegible struck scribble as `not`, reversing a
+  student's claim). On a crop of a struck word that is exactly the failure to expect.
+
+### 7e. Starting the model
+
+`llama-olmocr.service` is `disabled` and on-demand (~2.1 s to load). The page must start
+it, and the established pattern on this box is `scripts/vibevoice-lease.sh` — refcounted
+acquire/release, **never a bare `systemctl stop`**, because a second consumer mid-request
+gets cut off. Lease on first capture, release on idle. Muse on `:8084` is the same shape
+if 7d uses it.
+
+### Acceptance
+
+- 7a passes on the operator's real laptop at work, not just on the LAN.
+- A capture from the document camera arrives at ≥2000 px on the long edge, and the UI
+  says what it was.
+- A crop of a known-ambiguous word from the halo-prep sample set returns candidates in
+  **under 20 s** end to end. Latency is the metric that matters here, not page accuracy —
+  the operator is waiting. olmOCR-2 measured 2.7–18.4 s per full page, so a crop should
+  be comfortably inside this; if it is not, something in 7b/7c is wrong.
+- No capture is on disk after the request completes.
+
+**Deliberately not in scope:** marking, scoring, whole-script transcription, and any
+storage of student work. If those are ever wanted they are a different tool with a
+different risk profile, and the over-correction finding above applies to them in full.
 
 ---
 
