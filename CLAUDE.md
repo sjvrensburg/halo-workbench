@@ -6,8 +6,8 @@ Guidance for Claude Code working in this repository.
 
 A small FastAPI app on the GMKtec EVO-X3 that exposes **specialist, verifiable
 local-model tasks** to a browser over Tailscale: PDF→markdown via marker, regex
-synthesis from examples, and protected-span Chinese↔English translation. One port,
-one unit, three pages.
+synthesis from examples, assisted redaction, and protected-span Chinese↔English
+translation. One port, one unit, four pages.
 
 It is a sibling of `../halo-prep`, which is the runbook that built the box and holds
 the llama-server units, the model manifest and the pitfall list. **Read
@@ -44,6 +44,7 @@ The three verifiers, concretely:
 | Tool | Verifier |
 |---|---|
 | marker | the `.marker-ok` provenance sidecar, checksum-matched against the `.md` |
+| redact | re-extract the output text and confirm no removed span survives it |
 | regex | the user's own positive/negative examples, executed |
 | translate | protected spans present once and in order, plus a residual-script check |
 
@@ -52,10 +53,18 @@ pass, stop. Fail the job instead.
 
 ## Load-bearing decisions
 
-- **One port (8093), one service.** Three ports would mean three `tailscale serve`
+- **One port (8093), one service.** A port per tool would mean four `tailscale serve`
   registrations that live outside this repo, are invisible to grep, and do not
   survive a rebuild. halo-prep already carries that problem for four ports; do not
-  add three more.
+  add more.
+- **No auth, tailnet only** (operator, 2026-08-29), matching the four existing ports.
+  It follows that the app binds `127.0.0.1` and is reached only through
+  `tailscale serve` — that binding is the whole access control, so do not change
+  `--host` for convenience, and do not add a LAN listener "for testing".
+- **Redaction output is a candidate, not a redacted document.** The verifier proves
+  everything found was removed; nothing can prove nothing was missed. Every label the
+  user sees must say so. See PLAN.md phase 4 — this is a wording rule with a real
+  failure behind it, not a disclaimer.
 - **Concurrency 1, and not a config knob.** Every tool here contends for the same GPU
   as three resident llama-server units. Marker additionally spawns its own surya model
   servers (~2.9 GB). This box has **no swap** (phase 2 of halo-prep removes zram) and

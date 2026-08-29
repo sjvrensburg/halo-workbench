@@ -54,7 +54,7 @@ REGEX_ENDPOINT = os.environ.get("WORKBENCH_REGEX_ENDPOINT", "http://127.0.0.1:80
 # PROVISIONAL. Translation is zh<->en (operator, 2026-08-29) and a general chat model
 # is the fallback, not the plan: a purpose-built MT model already sits on disk at
 # :8089 (MiLMMT-46-1B, on-demand, owned by ../anti-watermark-mcp), and Hy-MT2-30B-A3B
-# is a candidate for its trained do-not-translate instructions. PLAN.md phase 5a is a
+# is a candidate for its trained do-not-translate instructions. PLAN.md phase 6a is a
 # bake-off that decides this value; do not build against it until that has run.
 TRANSLATE_ENDPOINT = os.environ.get(
     "WORKBENCH_TRANSLATE_ENDPOINT", "http://127.0.0.1:8088"

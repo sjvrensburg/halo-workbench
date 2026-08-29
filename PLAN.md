@@ -1,7 +1,7 @@
 # halo-workbench — build plan
 
 Written 2026-08-29 on the EVO-X3. This is the plan a later session should execute.
-Phase 0 is already done and verified; phases 1–4 are not started.
+Phase 0 is already done and verified; phases 1–6 are not started.
 
 Read `CLAUDE.md` before touching anything — it holds the decisions that are easy to
 reverse by accident. This file holds the *order* and the *acceptance tests*.
@@ -28,19 +28,23 @@ does not name one, that tool is not ready to build.
 ## Shape
 
 One FastAPI app, one port (**8093**), one systemd user unit, one `tailscale serve`
-registration, three pages. Not three services — see CLAUDE.md "One port".
+registration, four pages. Not four services — see CLAUDE.md "One port".
 
 ```
   browser (laptop / iPad, over Tailscale)
-        │  http://evo-x3:8093
+        │  http://evo-x3:8093        no auth — tailnet only (operator, 2026-08-29)
         ▼
   halo-workbench  (uvicorn, ~/venvs/workbench)
         ├── /marker    → subprocess: halo-prep marker_run.sh   (no LLM of ours)
+        ├── /redact    → deterministic patterns FIRST, model as recall booster
         ├── /regex     → llama-server :8092  + generate-and-test loop
-        └── /translate → llama-server :8088  + placeholder round-trip check
+        └── /translate → MT model (phase 6a picks it) + round-trip check
                 │
-                └── all three go through ONE job queue, concurrency 1
+                └── all four go through ONE job queue, concurrency 1
 ```
+
+`/redact` composes with `/marker`: a converted PDF should be redactable in one click
+from its result page, without a round trip through the user's disk.
 
 ---
 
@@ -136,9 +140,65 @@ slop.
 - Verify from the laptop: `curl http://evo-x3:8093/healthz`.
 
 Do phases 1–3 and stop. Get real use out of marker before building anything else —
-if the other two never get built, the project has already paid for itself.
+if the other three never get built, the project has already paid for itself.
 
-## Phase 4 — the regex tool
+## Phase 4 — the redaction tool
+
+Added on the operator's request 2026-08-29. Ordered before regex and translate
+because it composes with marker (redact what you just converted) and because the box
+has the right shape for it: entity spotting is narrow, and removal is checkable.
+
+**Read this section's limitation before designing the UI.** The verifier can prove
+that *everything found* was removed. It cannot prove *nothing was missed* — recall is
+unverifiable here, and that is the one property a redaction tool's user assumes it
+has. So the tool is **assisted redaction with a human review step**, and every page,
+button and filename must say so. Never label an output "redacted"; label it
+"redaction candidate — review before sending". A tool that quietly under-redacts one
+invoice is worse than no tool, because it replaces the user's own care with false
+confidence.
+
+**Build**
+
+- **Deterministic layer first, and it is the primary detector.** Patterns for emails,
+  phone numbers, IBANs/account numbers, ID numbers, URLs, dates, postal addresses,
+  plus a user-supplied literal/regex list (names, employers, case numbers). This layer
+  is exact, testable offline, and needs no GPU.
+- **The model is a recall booster over that layer, never a replacement.** Ask `:8092`
+  to propose *additional* spans — names, org names, oblique identifiers ("my
+  daughter's school") that no pattern catches. Every proposal must be located in the
+  source by exact string match; a proposed span that does not literally occur is
+  discarded, not fuzzy-matched. That single rule removes hallucinated spans entirely.
+- **Everything is a proposal until the user confirms.** Render the document with every
+  candidate highlighted, categorised, and individually toggleable. Default all
+  deterministic hits on and all model proposals on, but visible.
+- **Verifier — re-extract, then search.** After producing output, extract its text
+  afresh and assert that no confirmed span survives, in any casing or whitespace
+  variant. Fail the job if one does. Report the count of spans removed by category.
+- **Output format: text/markdown out, by default.** Do not hand back the original PDF
+  with black rectangles drawn on it — that is *the* classic redaction failure, since
+  the text sits untouched underneath and `pdftotext` recovers it in one command. If
+  PDF-in/PDF-out is ever wanted, it must use true redaction (PyMuPDF
+  `apply_redactions`, which removes the underlying content stream) and the verifier
+  above must run on the *output PDF's* extracted text before it is offered. Note
+  PyMuPDF is deliberately not installed anywhere on this box today (halo-prep, the
+  `ocr-and-documents` skill rewrite) — installing it into `~/venvs/workbench` is fine,
+  but it is a new dependency and a new attack surface for scanned input.
+- Also redact metadata: PDF `/Info`, XMP, and any author name marker carried through.
+  A document whose body is clean and whose properties still say the author's full name
+  has not been redacted.
+
+**Acceptance**
+
+- A real invoice (the kind `.gitignore` exists for) → every email, phone, account
+  number and address is caught by the deterministic layer alone, before any model runs.
+- Verifier catches a deliberately broken redactor that replaces only the first
+  occurrence of a repeated name.
+- A model proposal that does not occur verbatim in the source is dropped, and the drop
+  is visible in the job log rather than silent.
+- If PDF output is built: `pdftotext` on the produced PDF finds none of the redacted
+  strings. This test is non-negotiable and is the whole reason PDF output is deferred.
+
+## Phase 5 — the regex tool
 
 Right instinct, wrong shape as originally sketched: not a chatbot. There is no
 specialist regex model worth chasing on HF; the good ones are general models. But
@@ -171,7 +231,7 @@ regex is the most verifiable task on the list, so make the *loop* the product.
 - A prompt engineered to produce `(a+)+$` against a long non-matching input fails
   that candidate on timeout and the request still returns.
 
-## Phase 5 — the paraphrase / translate tool
+## Phase 6 — the paraphrase / translate tool
 
 **Scope, set by the operator 2026-08-29: Chinese ↔ English. Afrikaans is out of
 scope** — do not spend time on it, and delete this sentence's premise rather than
@@ -179,56 +239,67 @@ re-litigating it later.
 
 Lowest priority of the three, and the only one that may need a new model on disk.
 
-### 5a. Bake-off first — no UI until a model is chosen
+### 6a. Bake-off first — no UI until a model is chosen
 
-Three candidates, and the box already owns two of them:
+Four candidates, and the box already owns two of them:
 
 | Candidate | On disk? | Notes |
 |---|---|---|
 | **MiLMMT-46-1B** (`:8089`, `llama-milmmt.service`) | yes, Q8_0 | purpose-built MT, already wired for `../anti-watermark-mcp`, ~1 GiB, on-demand |
 | **MiLMMT-46-12B** (`~/models/milmmt-46-12b`) | yes, Q8_0 | same family, no unit; the 1B unit's comment says swap `--model` and `--alias` to try it |
-| **Hy-MT2-30B-A3B** (Tencent, HF) | **no** | operator's suggestion; ships *trained* support for special instructions (terminology, do-not-translate, style) |
+| **Hy-MT2-7B** (`tencent/Hy-MT2-7B-GGUF`) | **no** | **try this one first.** Same trained special-instruction support, vendor-published GGUF (no conversion step), small enough to be a cheap experiment |
+| **Hy-MT2-30B-A3B** (Tencent, HF) | **no** | the same idea at ~18 GiB. Only worth the download if the 7B's *quality* falls short — not for speed |
 
 Hy-MT2's trained instruction support is the interesting part, and the reason to
 take the download seriously: **a native lever beats a hand-rolled one.** That is a
 lesson this box has already paid for — halo-prep pitfall #30, where a hand-spliced
 terseness template took Granite from 15/15 to 1/15 while the model's own `low_effort`
 flag bought the same latency at 15/15. If Hy-MT2 can be *told* which spans not to
-translate, the sentinel machinery in 5b becomes a fallback rather than the mechanism.
+translate, the sentinel machinery in 6b becomes a fallback rather than the mechanism.
 
 **But a native lever still has to be verified, not trusted.** Whichever mechanism is
-used, the checks in 5b run on every request either way.
+used, the checks in 6b run on every request either way.
 
-Cost of adopting Hy-MT2, all of it manual and none of it generated:
+**Start with Hy-MT2-7B, not the 30B.** The question the bake-off answers is whether
+trained special-instruction support beats MiLMMT for this use, and the 7B answers that
+for a ~5 GiB download and a vendor-published GGUF. Reach for the 30B-A3B only if the
+7B's *translation quality* is the thing that falls short — not if it is merely slower,
+since a 30B-A3B is not the fix for that.
 
-- ~17–20 GiB download (3.2 TiB free, so disk is not the constraint), a new
+Cost of adopting either, all of it manual and none of it generated:
+
+- The download (3.2 TiB free, so disk is not the constraint), a new
   `llama-hymt2.service`, and a new port — **`:8094`**, since `:8089` belongs to
   MiLMMT and `../anti-watermark-mcp` pins that unit by name via
   `AWM_TRANSLATOR_MODEL`.
-- A hand-added line in halo-prep's `config/models.conf` (nothing generates it):
-  `hymt2-30b-a3b|llama-hymt2.service|8094|~18|translation`. **Group `translation`**,
+- A hand-added line in halo-prep's `config/models.conf` (nothing generates it), e.g.
+  `hymt2-7b|llama-hymt2.service|8094|~5|translation`. **Group `translation`**,
   matching MiLMMT, so `model-switch.sh` never leaves two translators fighting for GTT.
-  30B-A3B is ~18 GiB against three resident units — it must be on-demand, not enabled.
+  On-demand, not enabled — three units are already resident and the operator moved
+  things *off* auto-start twice in August for GTT pressure.
 - A `tailscale serve` registration only if it needs to be reachable directly; the
   workbench proxies it, so probably not.
 - Read halo-prep's CLAUDE.md "Cross-file couplings" before writing the unit. The
-  `--ctx-size` ↔ consumer rule applies: this app is the consumer.
+  `--ctx-size` ↔ consumer rule applies: this app is the consumer. Check the vendor
+  GGUF's chat template with `curl -s localhost:8094/props | jq -r .chat_template`
+  before assuming how special instructions are passed — for an MT model that is where
+  the do-not-translate syntax actually lives.
 
 **Bake-off method.** ~10 real paragraphs of the kind actually wanted (both directions,
 zh→en and en→zh), each with 3–5 protected spans. Score: adequacy by eye, plus the
-mechanical checks from 5b, plus wall-clock per paragraph. Write the result to
+mechanical checks from 6b, plus wall-clock per paragraph. Write the result to
 `docs/translation-bakeoff.md` — including if the answer is "the 1B already on disk is
 good enough", which would make this phase nearly free. **If none of them is good, say
 so and stop.** A translation tool that quietly produces poor Chinese is worse than no
 translation tool.
 
-### 5b. The tool
+### 6b. The tool
 
 - Input: text, plus regex patterns (and/or literal selections) marking spans that must
   survive untranslated — citations, variable names, product names, LaTeX.
 - Mechanism: either the model's native do-not-translate instruction (Hy-MT2) or
   sentinel substitution (`⟦0⟧`, `⟦1⟧`, …) before the call, restored after. **Models
-  drop, translate, renumber and duplicate sentinels** — that is why 5b's checks exist
+  drop, translate, renumber and duplicate sentinels** — that is why 6b's checks exist
   regardless of which mechanism is chosen.
 - **Verifier, three cheap mechanical checks, every request:**
   1. **Spans.** Every protected span present in the output exactly once, in the
@@ -254,11 +325,16 @@ translation tool.
 
 ## Open questions for the operator
 
-1. **Auth.** `tailscale serve` is tailnet-only and there is no API key on any of the
-   four existing ports. Those are inference endpoints; this one accepts file uploads
-   and stores documents. Single-user tailnet makes it defensible, but it is a
-   deliberate choice, not an oversight — decide it explicitly before phase 3.
-2. **Languages** for phase 5, and whether Afrikaans is in scope.
-3. **Retention**: 7 days for uploaded PDFs is a guess. Confirm.
-4. Does anything else want the job queue (batch marker over a directory, whisper
+1. ~~**Auth.**~~ **Decided 2026-08-29: no auth.** Tailnet-only, matching the four
+   existing ports. Recorded here because it is a deliberate choice rather than an
+   oversight, and because it is the assumption that would have to be revisited if the
+   tailnet ever gains a second user or a shared node — the upload and redaction pages
+   hold the user's real documents, which the inference ports do not.
+2. ~~**Languages**~~ **Decided: Chinese ↔ English. Afrikaans out of scope.**
+3. **Retention**: 7 days for uploaded PDFs is still a guess. Confirm. It matters more
+   now than it did — phase 4 means the job store holds documents specifically because
+   they contain things worth removing.
+4. **PDF-in/PDF-out redaction** (phase 4): wanted, or is markdown output enough?
+   It is most of the work and all of the risk.
+5. Does anything else want the job queue (batch marker over a directory, whisper
    transcription)? Do not build for it now; just do not make it impossible.
