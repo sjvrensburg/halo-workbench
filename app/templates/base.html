@@ -140,6 +140,11 @@
     <a href="/redact" {% if page == "redact" %}aria-current="page"{% endif %}>redact</a>
     <a href="/regex" {% if page == "regex" %}aria-current="page"{% endif %}>regex</a>
     <a href="/translate" {% if page == "translate" %}aria-current="page"{% endif %}>translate</a>
+    {# The other web UI on this box, ../drp-web on :8095. Absolute and by NAME, not by
+       100.x address: a tailnet address returns tailscaled's own 404 (halo-prep pitfall
+       #33), and from a phone this link is the only way anyone finds that service
+       without being told a port number. #}
+    <a href="http://evo-x3:8095/">research&nbsp;&rarr;</a>
   </nav>
 </div></header>
 

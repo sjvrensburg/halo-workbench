@@ -88,3 +88,6 @@ Then `http://evo-x3:8093` from any machine on the tailnet — the name, never th
 
 - `../halo-prep` — the runbook that built the box: model units, ports, pitfalls.
 - `../deep-research-podcast` — the other thing this box is genuinely good at.
+- `../drp-web` — its web interface, on `http://evo-x3:8095`, linked from the header here.
+  Same skeleton as this app; hours-long runs, so they are systemd units rather than
+  queued jobs, and it gets a service of its own rather than a fifth tab.
