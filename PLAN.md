@@ -99,7 +99,7 @@ SIGKILL) and passed on 2026-08-29. Retention was checked separately: an 8-day-ol
 job and a meta-less directory are pruned, a fresh job and a stale *queued* job are
 not.
 
-## Phase 2 — the marker tool  ← ship this first, it is the whole point of the project
+## Phase 2 — the marker tool ✅ DONE 2026-08-29
 
 The highest-value tool and the lowest-risk, because **marker is not an LLM**: its
 output is deterministic and its failure mode is a non-zero exit rather than plausible
@@ -135,6 +135,23 @@ slop.
 - Convert a non-PDF / a scanned image-only PDF that marker rejects → the page shows
   the failure and the stderr tail, and offers nothing to download.
 - `pgrep -f surya` is empty 30 s after a job finishes, and after a job is killed.
+
+All four passed on 2026-08-29. `dang_ullah_2022.pdf` (12 pages) converted in 81 s,
+4 images extracted, sidecar validated, markdown and `.zip` downloaded; corrupting the
+`.md` and removing the sidecar each turn the download into a 409; a non-PDF fails the
+job with a reason and offers nothing. The refusals are scripted in
+`tests/phase2_acceptance.sh` (no GPU needed); the conversion itself is run by hand.
+
+**The surya check failed first, and the fix is in this repo rather than the wrapper.**
+Measured here: after a conversion that *succeeded*, `surya.fast_layout.server` (1.5 GB)
+and `surya.ocr_error.server` (1.0 GB) were still resident, reparented to pid 1 —
+2.6 GB stranded on a box with no swap. `marker_run.sh` does try to prevent this: it
+runs marker in its own process group and kills the group. These two put themselves in
+a process group of their own, so `kill -- -PGID` never reaches them. The app therefore
+runs the wrapper inside a transient `systemd-run --user --scope` and empties that
+cgroup on every exit path, plus any scope left behind by a killed service at startup.
+A cgroup is the one grouping a child cannot leave. **The hole is still in the wrapper**
+and halo-prep should close it there too — this is a belt, not the fix.
 
 ## Phase 3 — reachability
 
@@ -376,3 +393,30 @@ translation tool.
    4a's markdown path works. It is most of the work and all of the risk.
 5. Does anything else want the job queue (batch marker over a directory, whisper
    transcription)? Do not build for it now; just do not make it impossible.
+6. **Should marker use `--mode balanced`, and should it use an LLM at all?** Two
+   separate questions that want one bake-off, both raised 2026-08-29 and neither
+   decided.
+
+   `marker_run.sh` hardcodes `--mode fast`. This marker's own help says `balanced`
+   "uses the VLM layout model + full-page OCR (best on GPU)" while `fast` "uses
+   lightweight CPU detectors for layout/tables and only block-OCRs garbled/empty
+   content". Marker is already on the GPU either way — torch 2.11.0+rocm7.13.0 sees
+   the Radeon 8060S through the HIP shim, and surya's OCR-2 VLM runs on the Vulkan
+   llama-server with `-ngl 99` — so this is about how much of the GPU it uses, and it
+   is a change to a halo-prep file, not to this repo.
+
+   `--use_llm` is the bigger question. Mechanically it works: marker ships an
+   OpenAI-compatible service (`marker/services/openai.py`, `--openai_base_url`), and
+   two VLMs with mmproj are already on disk (`qwen38-27b`, 17 G, in models.conf as
+   :8090; `muse-glimmer`, 15 G). It would need an on-demand unit, not a fourth
+   resident one — ~17 G plus marker's own ~2.9 G on a box with no swap is pitfall #17's
+   exact shape.
+
+   **The objection that decides it:** phase 2 rests on "marker is not an LLM". Turning
+   on `--use_llm` enables `llm_equation`, `llm_table`, `llm_table_merge`,
+   `llm_page_correction` — processors that rewrite content with a model. The
+   `.marker-ok` sidecar would still be written, because it proves the output came from
+   `marker_run.sh`, not that no LLM touched the text. The verifier would keep saying
+   the same words while meaning less. If this is ever built it must be a per-job
+   opt-in, labelled on the page, and recorded in `meta.json` so a later reader can
+   tell the two kinds of output apart.

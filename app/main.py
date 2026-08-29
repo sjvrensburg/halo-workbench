@@ -10,6 +10,7 @@ from fastapi import FastAPI
 from fastapi.responses import HTMLResponse
 
 from app import config, jobs
+from app.tools import marker
 
 
 @asynccontextmanager
@@ -21,6 +22,9 @@ async def lifespan(_: FastAPI):
     they happen here rather than in a route or at import time (import runs twice
     under `uvicorn --reload`).
     """
+    # Before the worker: a scope left by a killed process is holding GPU memory now,
+    # and the first thing this service does is hand marker the GPU again.
+    marker.reap_orphan_scopes()
     jobs.start()
     try:
         yield
@@ -29,6 +33,10 @@ async def lifespan(_: FastAPI):
 
 
 app = FastAPI(title="halo-workbench", docs_url=None, redoc_url=None, lifespan=lifespan)
+
+# One router per tool, so a tool's routes, its job handler and its verifier stay in
+# one file. Importing the module is also what registers its handler with app.jobs.
+app.include_router(marker.router)
 
 
 @app.get("/healthz")
@@ -58,9 +66,9 @@ def index() -> str:
  li{margin:.4rem 0} .todo{color:#888}
 </style>
 <h1>halo-workbench</h1>
-<p>Specialist tools on the EVO-X3. Phase 0 &mdash; nothing is built yet.</p>
+<p>Specialist tools on the EVO-X3. Each one ships a verifier that runs on every request.</p>
 <ul>
-  <li class="todo">PDF &rarr; markdown (marker) &mdash; PLAN.md phase 2</li>
+  <li><a href="/marker">PDF &rarr; markdown (marker)</a></li>
   <li class="todo">Regex from examples &mdash; PLAN.md phase 4</li>
   <li class="todo">Translate with protected spans &mdash; PLAN.md phase 5</li>
 </ul>

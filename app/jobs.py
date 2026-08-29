@@ -105,6 +105,11 @@ class Job:
         return self.meta.get("params", {})
 
     @property
+    def result(self) -> dict[str, Any]:
+        """Whatever the tool recorded about its output. See `record`."""
+        return self.meta.get("result", {})
+
+    @property
     def input_path(self) -> Path | None:
         """The uploaded file, if this job had one."""
         name = self.meta.get("input_filename")
@@ -229,6 +234,18 @@ def submit(
     _QUEUE.put(job_id)
     log.info("job %s queued (%s)", job_id, tool)
     return job_id
+
+
+def record(job_id: str, **fields: Any) -> None:
+    """Merge tool-produced facts into meta.json's `result` object.
+
+    Paths recorded here are relative to the job directory, never absolute: the
+    directory can be read after a restart, and a status page that has to resolve an
+    absolute path is one rename away from serving a file from somewhere else.
+    """
+    meta = _read_meta(job_id) or {}
+    meta["result"] = {**meta.get("result", {}), **fields}
+    _write_meta(job_id, meta)
 
 
 def get(job_id: str) -> Job | None:

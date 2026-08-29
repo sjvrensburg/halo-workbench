@@ -1,0 +1,24 @@
+{# One stylesheet for the whole app, inline. Four pages do not need an asset pipeline
+   or a request that can 404 behind `tailscale serve`. #}
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>{% block title %}halo-workbench{% endblock %}</title>
+<style>
+ :root{color-scheme:light dark}
+ body{font:16px/1.5 system-ui,sans-serif;max-width:48rem;margin:2.5rem auto;padding:0 1rem}
+ h1{font-size:1.4rem} h1 a{color:inherit;text-decoration:none}
+ code,pre{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:.87em}
+ pre{background:#8881;padding:.75rem;border-radius:6px;overflow-x:auto;white-space:pre-wrap}
+ .muted{color:#888} .big{font-size:1.6rem;font-weight:600}
+ .status{display:inline-block;padding:.1rem .5rem;border-radius:999px;font-size:.8rem;
+         text-transform:uppercase;letter-spacing:.04em;background:#8882}
+ .status.done{background:#2a82} .status.failed{background:#c332} .status.running{background:#29a2}
+ .warn{border-left:3px solid #c93;padding-left:.75rem}
+ table{border-collapse:collapse;width:100%} td,th{text-align:left;padding:.3rem .5rem .3rem 0}
+ .card{border:1px solid #8883;border-radius:8px;padding:1rem;margin:1rem 0}
+ form p{margin:.6rem 0}
+</style>
+<h1><a href="/">halo-workbench</a>{% block heading %}{% endblock %}</h1>
+{% block body %}{% endblock %}

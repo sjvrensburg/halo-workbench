@@ -77,7 +77,11 @@ curl -s localhost:8092/props                             # tune prompts against 
   the phase 6a bake-off.
 - `app/main.py` — FastAPI app, currently `/` and `/healthz` only. `/healthz` must
   never touch a model server: it has to stay answerable while `:8092` is mid-turn.
-- `app/tools/` — empty; one module per tool, each pairing its work with its verifier.
+- `app/tools/` — one module per tool, each holding its routes, its job handler and
+  its verifier together. `marker.py` is the pattern: `@jobs.register("marker")` for the
+  work, an `APIRouter` for the pages, and `verify()` re-run at download time so a `.md`
+  edited after conversion stops being downloadable.
+- `app/views.py`, `app/templates/` — the shared Jinja environment and the pages.
 - `app/jobs.py` — the job store and the one worker thread. Tools register a handler
   with `@jobs.register("name")`; it either returns (`done`) or raises (`failed`).
   There is no third outcome on purpose — a result the verifier did not pass must

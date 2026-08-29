@@ -1,0 +1,28 @@
+{% extends "base.html" %}
+{% block title %}marker — halo-workbench{% endblock %}
+{% block heading %} <span class="muted">/ marker</span>{% endblock %}
+{% block body %}
+<p>Upload a PDF, get markdown back. Conversion runs on the GPU one job at a time and
+a real paper can take <strong>up to ~20 minutes</strong> — the status page shows
+elapsed time so you can tell "slow" from "stuck".</p>
+
+<form class="card" method="post" enctype="multipart/form-data" action="/marker">
+  <p><input type="file" name="file" accept="application/pdf,.pdf" required></p>
+  <p><button type="submit">Convert</button>
+     {% if queued %}<span class="muted">{{ queued }} job(s) ahead of you</span>{% endif %}</p>
+</form>
+
+{% if jobs %}
+<h2>Recent</h2>
+<table>
+  {% for job in jobs %}
+  <tr>
+    <td><a href="/marker/{{ job.id }}">{{ job.meta.input_filename or job.id }}</a></td>
+    <td><span class="status {{ job.status }}">{{ job.status }}</span></td>
+    <td class="muted">{{ job.elapsed_seconds() | duration }}</td>
+    <td class="muted">{{ job.meta.created_at }}</td>
+  </tr>
+  {% endfor %}
+</table>
+{% endif %}
+{% endblock %}
