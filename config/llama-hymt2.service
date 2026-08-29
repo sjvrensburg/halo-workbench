@@ -11,8 +11,12 @@
 # fighting for GTT and never stops Hermes's or Open Notebook's model to start this one.
 #
 # ON-DEMAND, NOT ENABLED. Three units are already resident (:8092, :8088, :8086) and the
-# operator moved things off auto-start twice in August under GTT pressure. The workbench
-# starts nothing itself; a translate job with this port down must say so plainly.
+# operator moved things off auto-start twice in August under GTT pressure.
+#
+# The workbench STARTS THIS UNIT when a translate job needs it (operator, 2026-08-29 --
+# app/model_lease.py) and stops it again after 15 minutes idle. It stops it only if it
+# started it: start this by hand and it stays up until you stop it. Do not `enable` it --
+# on-demand is the whole point, and an enabled unit would hold ~6 GiB from boot.
 #
 # :8094 and not :8089: that port belongs to MiLMMT-46-1B, which ../anti-watermark-mcp
 # pins by unit name through AWM_TRANSLATOR_MODEL. Do not take it.

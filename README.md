@@ -39,12 +39,16 @@ tests/phase6_acceptance.sh    # translate: spans, the checks, the vendored maske
 tests/phase6_acceptance.sh --live    # ...plus a real round trip through :8094
 ```
 
-The translation model is on-demand and this app never starts it:
+The translation model is on-demand, and the app starts it when you press Translate —
+then stops it again after 15 minutes idle. Install the unit once:
 
 ```bash
 cp config/llama-hymt2.service ~/.config/systemd/user/
-systemctl --user daemon-reload && systemctl --user start llama-hymt2   # :8094
+systemctl --user daemon-reload      # do NOT enable it: on-demand is the point
 ```
+
+Start it by hand and the app leaves it alone — it only ever stops a unit it started
+itself.
 
 ## Run it (resident) — installed 2026-08-29
 

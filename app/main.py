@@ -10,7 +10,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse
 
-from app import config, jobs
+from app import config, jobs, model_lease
 from app.tools import marker, redact, regex, translate
 from app.views import templates
 
@@ -34,10 +34,15 @@ async def lifespan(_: FastAPI):
         # on would recover the first one's live job out from under it.
         logging.getLogger("uvicorn.error").error("refusing to start — %s", exc)
         raise
+
+    # Owns nothing yet: it only ever stops a unit a job here started (app/model_lease.py).
+    model_lease.start()
+
     try:
         yield
     finally:
         jobs.stop()
+        model_lease.stop()
 
 
 app = FastAPI(title="halo-workbench", docs_url=None, redoc_url=None, lifespan=lifespan)

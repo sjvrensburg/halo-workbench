@@ -88,6 +88,18 @@ STYLE_GUIDE_DIRS = [
     Path.home() / ".claude/skills",
 ]
 
-# Neither server auto-restarts on demand and neither is started by this app. If one
-# is stopped, the tool page must say so plainly rather than hanging on a refused
-# connection: `systemctl --user is-active llama-ornith` / `llama-ornith35`.
+# ── On-demand model units ────────────────────────────────────────────────────
+# CHANGED 2026-08-29 on the operator's instruction, reversing "this app starts nothing".
+# `llama-hymt2` exists only to serve the translate page, so pressing Translate IS the
+# request to start it, and nothing else on the box wants it resident meanwhile.
+#
+# ONLY units in this map are ever started or stopped, and only when this app started
+# them (see app/model_lease.py). :8092, :8088 and :8086 are Hermes's, Open Notebook's
+# and its vector search's; those stay the operator's business and a tool page still says
+# plainly when one of them is down rather than starting it.
+MANAGED_UNITS = {TRANSLATE_ENDPOINT: "llama-hymt2"}
+
+# Idle before a unit we started is stopped again. Long enough to survive a person
+# reading the translation and pasting the next paragraph; short enough that a forgotten
+# tab does not hold ~6 GiB of GTT all afternoon.
+MODEL_IDLE_SECONDS = int(os.environ.get("WORKBENCH_MODEL_IDLE_SECONDS", 900))

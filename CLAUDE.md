@@ -167,6 +167,14 @@ pass, stop. Fail the job instead.
 - **Jobs are directories, not rows.** `~/.local/state/halo-workbench/jobs/<id>/`.
   Survives a restart, inspectable with `ls` and `cat` when a user reports something
   odd. Do not introduce a database.
+- **The translate model starts on demand; nothing else does** (operator, 2026-08-29,
+  reversing the app's earlier "starts nothing" rule). `llama-hymt2` exists only to serve
+  `/translate`, so pressing Translate is the request to start it, and `app/model_lease.py`
+  does — then stops it again after `MODEL_IDLE_SECONDS` of no use. **Only units in
+  `config.MANAGED_UNITS` are touched, and only ones this app started**: if the unit was
+  already active when the job arrived, someone else is using it and it is left alone
+  forever. `:8092`, `:8088` and `:8086` stay the operator's business, and a tool page
+  still says plainly when one of those is down instead of starting it.
 - **Model ports are single-slot and shared.** `:8092` is Hermes's model and `:8088` is
   Open Notebook's; both run `--parallel 1`. Requests from here queue behind theirs and
   theirs behind ours. That is accepted, not a bug to fix — do not add `--parallel` to

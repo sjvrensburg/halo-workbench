@@ -28,7 +28,7 @@ from pathlib import Path
 from fastapi import APIRouter, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 
-from app import config, jobs, protect, redaction, translation
+from app import config, jobs, model_lease, protect, redaction, translation
 from app.views import templates
 
 log = logging.getLogger(__name__)
@@ -185,6 +185,20 @@ def run(job: jobs.Job) -> None:
     mode = "rephrase" if source == target else "translate"
     endpoint = config.REPHRASE_ENDPOINT if mode == "rephrase" else config.TRANSLATE_ENDPOINT
 
+    # Start the model if it is ours and it is not up. The page shows the wait rather
+    # than looking wedged: a cold 7B is tens of seconds, which is indistinguishable from
+    # a hang if nothing says so.
+    def announce(unit: str) -> None:
+        jobs.record(job.id, stage=f"starting {unit} — the model is not resident")
+
+    try:
+        waited = model_lease.ensure_running(endpoint, on_wait=announce)
+    except RuntimeError as exc:
+        raise jobs.JobError(str(exc)) from None
+    if waited:
+        jobs.record(job.id, model_start_seconds=round(waited, 1))
+    jobs.record(job.id, stage="")
+
     instruction = PRESETS.get(job.params.get("preset", ""), "")
     guide_id = job.params.get("guide", "")
     audit = ""
@@ -237,6 +251,10 @@ def run(job: jobs.Job) -> None:
         chunk = translation.Chunk(source=source_chunk, output=restored)
         chunk.checks = translation.run_checks(source_chunk, restored, spans, target, mode)
         chunks.append(chunk)
+
+    # Keep the model alive while a person is working through a document, and let the
+    # idle timer measure idleness rather than uptime.
+    model_lease.touch(endpoint)
 
     jobs.record(
         job.id,
@@ -322,6 +340,7 @@ def status_json(job_id: str):
         "chunks": job.result.get("chunks", []),
         "audit": job.result.get("audit", ""),
         "mode": job.result.get("mode", ""),
+        "stage": job.result.get("stage", ""),
     })
 
 

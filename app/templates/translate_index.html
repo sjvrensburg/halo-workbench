@@ -64,7 +64,7 @@ out before the model sees the text and put back afterwards.</p>
 
   <div class="bar">
     <button type="submit" id="go">Translate</button>
-    <span class="muted" id="state">{% if job %}{{ job.status }}{% endif %}</span>
+    <span class="muted" id="state">{% if job %}{{ job.result.stage or job.status }}{% endif %}</span>
     {% if queued %}<span class="muted">{{ queued }} job(s) ahead</span>{% endif %}
     <span class="muted">⌘/Ctrl + Enter</span>
   </div>
@@ -177,7 +177,8 @@ const jobId = "{{ job.id }}";
 async function poll() {
   const response = await fetch(`/translate/${jobId}.json`, {cache: "no-store"});
   const data = await response.json();
-  $("state").textContent = data.status + (data.elapsed ? ` · ${Math.round(data.elapsed)}s` : "");
+  $("state").textContent = (data.stage || data.status)
+    + (data.elapsed ? ` · ${Math.round(data.elapsed)}s` : "");
   if (data.output) $("out").textContent = data.output;
   if (data.chunks.length) {
     $("checks").innerHTML = data.chunks[0].checks

@@ -503,6 +503,10 @@ Decisions taken while building it:
   citation must come back identical. That is the one part of an editorial rewrite that
   can be verified, and it is the guides' own promise — academic-humanizer says it "never
   changes a number, result, or citation". A rewrite that edits one fails the job.
+- **The model starts itself.** `llama-hymt2` serves nothing but this page, so pressing
+  Translate starts it (~2 s warm, tens of seconds cold) and 15 minutes idle stops it. Only
+  units this app started are ever stopped — verified both ways: a unit started by a job is
+  released on the idle timer, and one started by hand survives it.
 - **No translate-as-you-type.** Explicit button and ⌘⏎: every keystroke would queue a GPU
   job on a box whose queue is one deep and shared with Hermes.
 
