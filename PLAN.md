@@ -627,31 +627,74 @@ and lost content. olmOCR-2 has dynamic resolution and should behave differently.
 **Should. Measure it before relying on it** — one crop, one full page, same word, and
 check the crop is at least as good.
 
-### 7d. Several candidates, not one answer
+### 7d. A distribution over readings, not one answer
 
-A hint that offers three readings beats one confident answer, because the operator is
-pattern-matching against ink they can see. This is the one place where the interactive
-framing changes the model settings rather than just the UI copy.
+The operator's framing, and the right one: the page should return **several candidate
+readings with their support**, not a single confident string. They are pattern-matching
+against ink they can see, so three readings beat one — and where the candidates diverge
+is exactly where their eye is needed.
 
-- `llama-olmocr.service` runs `--temp 0`, which is a **batch** decision — every halo-prep
-  measurement behind that unit was greedy. This page should override temperature
-  **per request** rather than change the unit.
-- Two cheap sources of candidates, and they answer different questions: sampling
-  olmOCR-2 several times at temperature, and asking Muse on `:8084` for the same crop.
-  Both scored 15/15 on legible symbols in halo-prep's comparison, so **disagreement
-  between them is a real signal that the squiggle is genuinely ambiguous** — surface it
-  as information, not as an error.
-- If Muse is used, note halo-prep's caveat: it hallucinates fluently inside
-  strikethroughs (it rendered an illegible struck scribble as `not`, reversing a
-  student's claim). On a crop of a struck word that is exactly the failure to expect.
+**Two sources of spread, and they answer different questions. Use both, label them
+differently.**
 
-### 7e. Starting the model
+- **Sampling one model at temperature** answers *"how sure is this model?"* Cheap:
+  measured on `:8097` 2026-08-30, repeat samples of the same crop reuse the prefill
+  almost completely — `cached_tokens` **4080 of 4081**, first request 18.4 s, each
+  further sample **10.5 s** on a full page. The image encode and prefill are paid once.
+  A one-word crop should be far below this; measure it rather than extrapolating.
+  Note `llama-olmocr.service` runs `--temp 0`, which is a **batch** decision — every
+  halo-prep measurement behind that unit was greedy. Override temperature **per
+  request** here; do not edit the unit.
+- **Asking different models** answers *"is the ink ambiguous?"* — which is the question
+  the operator actually has. Different inductive biases agreeing is real evidence;
+  one model sampled five times agreeing only means it is confident, which it can be
+  while wrong.
+
+**Who belongs in the ensemble is NOT the batch ranking.** halo-prep's bake-off scored
+models for unattended transcription of whole pages. This tool is attended and works on
+crops, so several of its disqualifiers stop applying and one of its criteria inverts:
+
+| model | batch verdict | as an ensemble member here |
+|---|---|---|
+| **olmOCR-2** `:8097` | adopted, 15/15 | **primary.** Fast (2.7–18.4 s/page), Apache-2.0, already the unit |
+| **Muse** `:8084` | 15/15, 8x slower | **good second voice** — different lineage entirely. But it *hallucinates fluently inside strikethroughs* (rendered an illegible struck scribble as `not`, reversing a claim). On a struck word, expect exactly that |
+| **Chandra-OCR-2** | rejected: dropped a whole page silently | **arguably the best third voice.** Its disqualifier was silence in an unattended batch, which is harmless when a human is watching. It scored 10/10 on pages it *did* answer, **marks struck text with `<del>` instead of resolving it**, and was the only model to preserve `generalisability`. When the ambiguity IS a strikethrough — a common case on a marked script — it is the only candidate that shows its working. Weights at `~/models/ocr-field/chandra2/`, 5.4 GiB |
+| **Qwen3.8-27B** `:8090` | 15/15 but 52–199 s/page | **untested on crops.** Its cost was ~2,000 reasoning tokens per page; a one-word crop may be cheap enough. Worth one measurement before ruling out — it is already on the box |
+| **Gemma-4-E4B** | 14/15, ~320 tok/page | **exclude from word-level candidates.** It paraphrases at low resolution — a *paraphraser in an ensemble is worse than useless*, because it produces fluent disagreement that is not about the ink, and the UI would present it as evidence of ambiguity when it is evidence of nothing. See halo-prep `docs/04` |
+
+**Gemma has a different job here.** At ~320 prompt tokens a page it is roughly an eighth
+of olmOCR-2's cost, which makes it the right model for questions *about* the capture
+before a crop is spent: is this page blank, is the camera in focus, which question is
+this. Page triage, never word candidates.
+
+**Presenting it.** Show agreement as agreement and disagreement as the finding, not as
+an error — this is the one screen where "the models disagree" is the most useful thing
+it can say. Do not average, vote, or pick a winner: collapsing the distribution throws
+away the only signal that distinguishes "hard to read" from "easy to read and I was
+wrong". Where a member marks up a strikethrough, preserve the markup rather than
+flattening it to text.
+
+**Not a verifier.** The ensemble is a better *presentation*, not a safety mechanism —
+the verifier is still the operator's eye on the ink (see this phase's opening). Do not
+let the spread become a confidence score that invites trusting the top candidate
+without looking.
+
+### 7e. Starting the models
 
 `llama-olmocr.service` is `disabled` and on-demand (~2.1 s to load). The page must start
 it, and the established pattern on this box is `scripts/vibevoice-lease.sh` — refcounted
 acquire/release, **never a bare `systemctl stop`**, because a second consumer mid-request
-gets cut off. Lease on first capture, release on idle. Muse on `:8084` is the same shape
-if 7d uses it.
+gets cut off. Lease on first capture, release on idle.
+
+7d makes this plural, and that changes the sizing. olmOCR-2 (8.8 G) plus Muse (15.4 G)
+plus Chandra (5.4 G) is ~30 GiB of GTT held for as long as the operator is marking — fine
+against a 112 GiB ceiling **with nothing else running**, and not fine on a day the
+podcast pipeline is going (halo-prep's README: `llama-research` is ~23 G and Qwen3.8 was
+moved off always-on precisely because that peak was OOM-killing runs, on a box with no
+swap). So: lease each member independently, start the second and third voices **only when
+the operator asks for more candidates**, and release on idle rather than at end of
+session. Chandra has no unit yet — it would need one, or a lease helper that starts a
+bare `llama-server`; do not add a resident unit for it.
 
 ### Acceptance
 
@@ -659,10 +702,13 @@ if 7d uses it.
 - A capture from the document camera arrives at ≥2000 px on the long edge, and the UI
   says what it was.
 - A crop of a known-ambiguous word from the halo-prep sample set returns candidates in
-  **under 20 s** end to end. Latency is the metric that matters here, not page accuracy —
+  **under 20 s** end to end, with at least two independent members answering. Latency is the metric that matters here, not page accuracy —
   the operator is waiting. olmOCR-2 measured 2.7–18.4 s per full page, so a crop should
   be comfortably inside this; if it is not, something in 7b/7c is wrong.
 - No capture is on disk after the request completes.
+- On a crop of a **struck-out** word, the page shows that the members disagree rather
+  than silently picking one. This is the case halo-prep measured Muse getting confidently
+  wrong, so it is the acceptance test that matters most.
 
 **Deliberately not in scope:** marking, scoring, whole-script transcription, and any
 storage of student work. If those are ever wanted they are a different tool with a
