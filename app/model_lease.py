@@ -52,6 +52,36 @@ def is_active(unit: str) -> bool:
     return _systemctl("is-active", unit).stdout.strip() == "active"
 
 
+def unit_exists(unit: str) -> bool:
+    """Is the unit file installed at all?
+
+    Asked because one member of the hint ensemble ships as a unit file in this repo that
+    the operator has to copy (config/llama-chandra.service). "Not installed" and "not
+    running" are different things to tell someone, and the second one is not actionable
+    when the first is true.
+    """
+    return _systemctl("cat", unit).returncode == 0
+
+
+def available_gib() -> float:
+    """MemAvailable, in GiB. The number to check a model's size against before a start.
+
+    This box has NO SWAP (halo-prep phase 2 removes zram) and OOM-kills under pressure —
+    pitfall #17. `MemFree` is the wrong field: most of the RAM here is page cache holding
+    model weights, which is reclaimable, so MemFree reads alarmingly low on a perfectly
+    healthy box and would refuse every start.
+    """
+    with open("/proc/meminfo") as meminfo:
+        for line in meminfo:
+            if line.startswith("MemAvailable:"):
+                return int(line.split()[1]) / (1024 * 1024)
+    return float("inf")  # not Linux, or a kernel too old to have the field: do not block
+
+
+def _idle_for(unit: str) -> int:
+    return config.MODEL_IDLE_OVERRIDES.get(unit, config.MODEL_IDLE_SECONDS)
+
+
 def _healthy(endpoint: str) -> bool:
     try:
         with urllib.request.urlopen(f"{endpoint}/health", timeout=2) as response:
@@ -60,11 +90,16 @@ def _healthy(endpoint: str) -> bool:
         return False
 
 
-def ensure_running(endpoint: str, on_wait=None) -> float:
+def ensure_running(endpoint: str, on_wait=None, needs_gib: float = 0.0) -> float:
     """Make sure the model behind `endpoint` is answering. Returns seconds waited.
 
     `on_wait(unit)` is called once if a start is actually needed, so the job page can say
     "starting the model" rather than looking wedged for half a minute.
+
+    `needs_gib` is checked against MemAvailable before a *cold* start, and refusing is the
+    whole point: the hint tool's ensemble is ~30 GiB if every member is asked, on a box
+    with no swap where the OOM killer picks its own victim. A refusal names a number; an
+    OOM kill takes down whatever was running.
     """
     unit = config.MANAGED_UNITS.get(endpoint)
     if unit is None:
@@ -77,6 +112,15 @@ def ensure_running(endpoint: str, on_wait=None) -> float:
             return 0.0
 
         already_active = is_active(unit)
+        if not already_active and needs_gib:
+            free = available_gib()
+            if free < needs_gib:
+                raise RuntimeError(
+                    f"not starting {unit}: it needs about {needs_gib:.0f} GiB and "
+                    f"{free:.0f} GiB is available. This box has no swap, so starting it "
+                    f"anyway would let the OOM killer choose what dies. Stop something "
+                    f"first — `systemctl --user list-units 'llama-*'`."
+                )
         if on_wait:
             on_wait(unit)
 
@@ -117,9 +161,10 @@ def release_idle(now: float | None = None) -> list[str]:
     stopped = []
     with _LOCK:
         for unit in sorted(_STARTED_BY_US):
-            if now - _LAST_USED.get(unit, 0) < config.MODEL_IDLE_SECONDS:
+            idle_after = _idle_for(unit)
+            if now - _LAST_USED.get(unit, 0) < idle_after:
                 continue
-            log.info("stopping %s after %d s idle", unit, config.MODEL_IDLE_SECONDS)
+            log.info("stopping %s after %d s idle", unit, idle_after)
             _systemctl("stop", unit)
             _STARTED_BY_US.discard(unit)
             _LAST_USED.pop(unit, None)

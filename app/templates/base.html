@@ -77,10 +77,19 @@
  .status.failed{background:color-mix(in oklab,var(--bad) 15%,transparent);color:var(--bad)}
  .status.running{background:color-mix(in oklab,var(--accent) 16%,transparent);color:var(--accent)}
 
+ /* Before the button rule, and !important, because `display:inline-flex` below outranks
+    the user-agent's `[hidden]{display:none}` -- so a `hidden` button rendered anyway.
+    Found 2026-08-30 on the hint page, where Capture sat there with no camera stream
+    behind it. Any rule that sets `display` on a hidden-able element needs this guard. */
+ [hidden]{display:none!important}
  button,.button{font:inherit;font-weight:550;min-height:2.75rem;padding:.55rem 1.1rem;
    border-radius:10px;border:1px solid transparent;background:var(--accent);color:var(--accent-ink);
    cursor:pointer;display:inline-flex;align-items:center;gap:.4rem}
  button:hover,.button:hover{filter:brightness(1.06)}
+ /* A disabled control must not read as the primary action. The hint page's "Start camera"
+    is disabled whenever enumerateDevices found nothing, which is a state the operator
+    will meet -- a doc cam that is off, or a browser that has not been granted access. */
+ button:disabled,.button:disabled{opacity:.45;cursor:not-allowed;filter:none}
  button.secondary,.button.secondary{background:transparent;border-color:var(--line);color:var(--ink)}
  button.secondary:hover{background:color-mix(in oklab,var(--ink) 5%,transparent)}
  :where(a,button,input,select,textarea,summary):focus-visible{
@@ -140,6 +149,7 @@
     <a href="/redact" {% if page == "redact" %}aria-current="page"{% endif %}>redact</a>
     <a href="/regex" {% if page == "regex" %}aria-current="page"{% endif %}>regex</a>
     <a href="/translate" {% if page == "translate" %}aria-current="page"{% endif %}>translate</a>
+    <a href="/hint" {% if page == "hint" %}aria-current="page"{% endif %}>hint</a>
     {# The other web UI on this box, ../drp-web. Points at its Tailscale Service name
        rather than at evo-x3:8095 (2026-08-29): the VIP follows the service if it ever
        moves to another machine, so this link does not go stale, and there is no port

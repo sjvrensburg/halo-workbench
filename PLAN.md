@@ -536,10 +536,28 @@ without it:
 
 ---
 
-## Phase 7 — the handwriting hint tool
+## Phase 7 — the handwriting hint tool ✅ DONE 2026-08-30
 
 Requested by the operator 2026-08-29, after the halo-prep search that put olmOCR-2-7B
-on `:8097`. **Not started.**
+on `:8097`.
+
+**Where this stands.** All of it: `/hint` is the fifth page, crops go to an ensemble one
+member at a time, readings come back grouped with their support, the page says when the
+members part company, and 7a's HTTPS wall came down the same day.
+
+**The order was reversed on purpose, and it was the right call.** This section said to do
+7a first and stop if it could not be done, which was sound reasoning — a camera tool with
+no camera is not the tool. When 7a turned out to need an admin-console toggle nobody
+present could flip, the alternative to stopping was to build the same tool with its
+*source* swapped: a file, or a paste, both of which work in an insecure context. That was
+worth doing because everything downstream of the capture — the crop, the ensemble, the
+spread, the leases — is what phase 7 is actually about, and none of it needed a camera to
+build or to measure. Those paths remain, and are the reason the tool works from a phone or
+over the plain-HTTP addresses.
+
+**Keep the fallback even though the camera works.** It is not scaffolding: it is how the
+tool is used from a device with no document camera, and it is the only capture path that
+survives a certificate expiring.
 
 **What it is, and what it is deliberately not.** The operator sits at work with a
 document camera (visualiser) over a student's script, hits a word they cannot read, and
@@ -571,7 +589,72 @@ Service, and one more thing to forget is not on the tailnet. It also keeps `:809
 bound to localhost — the browser talks only to `:8093`, so no second serve
 registration and no auth question.
 
-### 7a. HTTPS first — this is a prerequisite, not a detail
+### 7a. HTTPS ✅ DONE 2026-08-30 — and the Service carries it too
+
+**The diagnosis first, because the symptom is misleading.** `tailscale cert` answered
+**500 — "your Tailscale account does not support getting TLS certs"**, which reads like a
+plan or billing wall and is not one: it is what the admin console's *HTTPS Certificates*
+toggle being off looks like from the CLI, on a **Free** tailnet that supports certificates
+perfectly well. `tailscale status` said `CertDomains: None` for the same reason.
+
+Three steps, done in this order:
+
+```
+# 1. https://login.tailscale.com/admin/dns  →  HTTPS Certificates → Enable
+sudo tailscale serve --bg --https=443 http://127.0.0.1:8093      # 2. node name
+tailscale serve --service=svc:halo-workbench --bg --yes \
+    --https=443 http://127.0.0.1:8093                            # 3. Service name
+```
+
+Step 1 is the one with a cost, and it is permanent: **every name you obtain a certificate
+for is published to public Certificate Transparency logs and cannot be removed.** For this
+tailnet that is `evo-x3`, `halo-workbench` and `drp-web` under `tail80adad.ts.net` — the
+random tailnet name is what stands between that ledger and your organisation's identity,
+which is exactly why Tailscale generates one.
+
+**The open question is answered: a Tailscale Service can carry HTTPS.** After step 1
+`CertDomains` lists all three names, so the camera page did NOT have to fall back to the
+node name. One correction to how it is written, though — a certificate is issued for a
+full DNS name, so the secure-context URL is
+`https://halo-workbench.tail80adad.ts.net/`, **not** the bare `http://halo-workbench/`
+this repo uses elsewhere. The short form stays right for every HTTP link; the camera page
+needs the long one.
+
+Verified 2026-08-30, from the box and from a browser:
+
+    https://evo-x3.tail80adad.ts.net/healthz          200  (26.9 s on the first
+                                                            request -- Let's Encrypt
+                                                            issuing; instant after)
+    issuer=Let's Encrypt YE1, CN=evo-x3.tail80adad.ts.net, expires 28 Nov 2026
+    https://halo-workbench.tail80adad.ts.net/healthz  200  over IPv4
+
+**One wrinkle worth writing down.** From `evo-x3` *itself*, the Service name over IPv6
+times out — MagicDNS returns only the IPv6 VIP `fd7a:115c:a1e0::f12b:e380`, and the host
+cannot reach its own Service VIP that way; `curl -4` succeeds. A peer on the tailnet is
+the case that matters and is unaffected, but do not debug a Service from the machine
+hosting it and conclude it is broken.
+
+**The failure this will keep producing, so the page handles it.** Typed or bookmarked as a
+bare hostname, every browser tries `http://` first — which is how the first iPad visit
+landed on `http://halo-workbench.tail80adad.ts.net` and got the insecure-context banner
+with the HTTPS registration working perfectly. The banner now carries a one-tap **Open this
+page over HTTPS** link, and the addresses behind it are written down in
+`config.HINT_HTTPS_ORIGINS` rather than derived from the current URL, because both obvious
+derivations are wrong: `location.host` keeps the port (`https://…:8093`, where nothing
+listens) and the short MagicDNS name `evo-x3` has no certificate, since certificates are
+issued for full DNS names.
+
+**Acceptance met.** Opened `https://evo-x3.tail80adad.ts.net/hint` in a browser: the
+page's own insecure-context banner is gone, which happens only when
+`navigator.mediaDevices` exists, and `enumerateDevices()` ran and returned an empty list
+on this headless box. A camera-bearing client is the operator's remaining check.
+
+**It also caught a real bug, which is the argument for looking at the page rather than the
+status code.** The Capture button rendered while `hidden`: this stylesheet sets
+`button{display:inline-flex}`, which outranks the user agent's `[hidden]{display:none}`.
+Every `hidden` button on the site was showing. `base.html` now carries
+`[hidden]{display:none!important}` above the button rule, and disabled buttons no longer
+paint as the primary action.
 
 **Do this before writing any of the app, and stop if it cannot be done.**
 `navigator.mediaDevices.getUserMedia` exists only in a **secure context**: HTTPS or
@@ -595,7 +678,59 @@ error worth reading. Every other line of this phase depends on this working.
 `navigator.mediaDevices.getUserMedia({video:true})` resolves and a frame renders. No
 app, no model. If this fails the phase does not proceed.
 
-### 7b. Capture
+### 7b. Capture ✅ built — camera path written, file/paste path working
+
+Built as specified, with one addition the wall forced: the capture source is a device
+camera *or* a file *or* a paste, and only the first needs HTTPS. The device picker
+enumerates video inputs and does not default to anything, `getUserMedia` asks for
+`{width:{ideal:3840},height:{ideal:2160}}`, and `ImageCapture.takePhoto()` is preferred
+over grabbing the preview with a fallback for drivers that advertise it and then throw.
+
+**The dimensions shown are read from the bytes that arrived, in `app/handwriting.py`, not
+from what the browser was asked for** — a UI that reported the constraint rather than the
+result would reproduce halo-prep's MiniCPM failure while looking correct. Under
+`HINT_MIN_LONG_EDGE_PX` (2000) the page says so in the same place it shows the answer.
+
+Nothing is written to disk on any path.
+
+**Reworked 2026-08-30 after the first real use, on an iPad.** Three faults, all of them
+invisible on a desktop and all of them about the device this is actually used on:
+
+* **The video ran to its natural height**, so a portrait 4K frame was taller than the
+  screen: you scrolled down to aim and back up to press Capture. The preview and the
+  captured canvas are now capped at `52svh` / `58svh` and the controls ride *on* the video
+  in an overlay bar, so aiming and pressing are one glance. **`svh`, not `vh`** — on iOS
+  Safari `vh` is the height with the toolbars collapsed, so a `vh`-sized box is taller
+  than what you can see. Starting the camera also scrolls the frame into view, because
+  sizing alone still loses on a short landscape window.
+* **No way to switch cameras.** The dropdown was the only mechanism and it is the wrong
+  one for a tablet: what you want there is "the one pointing at the desk", which is
+  `facingMode`, not a device id. There is now a **⇄** button, and the dropdown appears
+  only when there is more than one camera to choose between. The choice is remembered in
+  `localStorage`, so a marking session does not re-pick it every time. Note the coupling:
+  flipping must **clear** the remembered `deviceId`, because a pinned device id wins over
+  `facingMode` and the button would silently do nothing.
+* **No zoom.** Two answers, because there are two different asks hiding in that word.
+  Optical zoom is offered as a slider **only where the platform reports the capability**
+  (Chrome on Android does; iOS Safari does not implement the zoom constraint at all) —
+  a control that cannot work is worse than none. And "zoom to region" is what the crop
+  already is, so the crop is now **shown**: a preview renders the selection at its own
+  pixel size, which is both the zoom and the check that the box landed on the right word.
+
+The stream's actual resolution is read from `track.getSettings()` and warned about in the
+same place, so "this camera is giving you 640×480" arrives before you spend a capture on it
+rather than after.
+
+**A fourth fault, from the same session and worth its own line: the icons did not exist.**
+`⇄` and `✕` rendered as **blank buttons** on iOS Safari — the system font has no glyph for
+them, and nothing falls back, logs or warns. Both are inline SVG now, with a word beside
+each. Sweeping the other templates for the same bet found `✓`/`✗` on the translate page
+marking whether a check passed, where a blank glyph does not look wrong so much as delete
+the answer; those are now `PASS`/`FAIL` in words. **Do not use a glyph outside Latin and
+common punctuation as an icon** — it is a bet on font coverage on a device you are not
+holding, and it fails silently.
+
+### 7b (as planned)
 
 **Resolution is the whole ballgame and the one place this can quietly fail.** halo-prep
 measured MiniCPM-V 4.6 at 5/15 on symbols purely because it spends ~700 tokens on a
@@ -614,7 +749,26 @@ spends time evaluating it.
 - Captures are **ephemeral**: student scripts carry names. Do not write them to the job
   store, do not reuse phase 1's 7-day retention. In memory, for the life of the request.
 
-### 7c. Crop-first interaction
+### 7c. Crop-first interaction ✅ built, and the gain is measured — 14x, not "some"
+
+Drag a box on a canvas; the crop is cut in the browser and only the crop is sent.
+
+**Measured 2026-08-30 on `:8097`, printed text rendered at 300 dpi** (the halo-prep
+handwriting samples were student scripts and are not on this box, so this measures the
+plumbing and the cost, NOT accuracy — that is the operator's eye, per this phase's
+opening, and the crop-vs-page *quality* comparison the plan asks for still wants real ink):
+
+| sent | pixels | prompt tokens | first sample | repeat samples |
+|---|---|---|---|---|
+| whole page | 2480×3509 | **4,111** | 9.6 s | 1.7 s |
+| one-line crop | 1459×125 | **291** | 1.2 s | 0.7 s |
+
+So a crop is a **14x** reduction in prompt tokens on the model that spends "the same
+~4,070 tokens regardless" — the tokens are not fixed at all, they are the image, and the
+page number in halo-prep's measurements was a *page-sized image*. The effective-resolution
+argument for cropping survives intact and the latency argument gets much stronger.
+
+### 7c (as planned)
 
 The primary gesture is **drag a box around the squiggle**, not "transcribe this page".
 olmOCR-2 spends ~4,070 prompt tokens regardless of how much page it is given, so a crop
@@ -627,7 +781,41 @@ and lost content. olmOCR-2 has dynamic resolution and should behave differently.
 **Should. Measure it before relying on it** — one crop, one full page, same word, and
 check the crop is at least as good.
 
-### 7d. A distribution over readings, not one answer
+### 7d. A distribution over readings, not one answer ✅ built
+
+`app/handwriting.group()` counts distinct readings within one member's samples and
+`agreement()` compares members' best-supported readings into exactly three words —
+`agree`, `disagree`, `insufficient` — with the note that goes on the page. Neither votes,
+averages, ranks or reconciles. Normalisation folds whitespace and case and **nothing
+else**: two readings differing by one character stay two, because that difference is the
+finding. `<del>` markup is shown verbatim, as text, never parsed.
+
+The two sources of spread are kept apart in the UI and in the defaults: the primary is
+sampled `HINT_SAMPLES` times at `HINT_TEMPERATURE` (how sure is this model), and a second
+voice is asked **once** (is the ink ambiguous). Sampling a second voice three times would
+answer the first question again at three times the cost.
+
+**Measured 2026-08-30, one-line crop, olmOCR-2 then Muse:**
+
+    olmOCR-2   3 samples   0.7 s each   291 prompt / 19 out
+    Muse       1 sample   42.0 s        384 prompt / 1257 out
+    across 2 members: DISAGREE  ('...data.' vs '...data:')
+
+That disagreement is one character and it is real — the page said so instead of picking
+one, which is the whole design working on the first crop it was given.
+
+**Two corrections the measurements forced, both recorded in `app/config.py`:**
+
+* **The token ceiling has to be per member.** olmOCR-2 answers a crop in 19 tokens; Muse
+  is a reasoning model and reached its answer only after **1,236**. At a shared 256-token
+  ceiling Muse returned an empty `content` three times out of three, and at 1024 it still
+  did. The tool reported that as silence honestly on both runs — which is the Chandra
+  behaviour being handled correctly — but the silence was the ceiling's fault. Members now
+  carry their own `max_tokens`, and the acceptance test asserts a reasoning member gets
+  more room than the primary.
+* **A second voice costs 42 s, not seconds.** See the acceptance note below.
+
+### 7d (as planned)
 
 The operator's framing, and the right one: the page should return **several candidate
 readings with their support**, not a single confident string. They are pattern-matching
@@ -679,7 +867,29 @@ the verifier is still the operator's eye on the ink (see this phase's opening). 
 let the spread become a confidence score that invites trusting the top candidate
 without looking.
 
-### 7e. Starting the models
+### 7e. Starting the models ✅ built, on the existing lease rather than a new one
+
+`app/model_lease.py` already had the right shape, so members were added to
+`MANAGED_UNITS` rather than given a second mechanism — which means the rule that matters
+carries over unchanged: **only a unit this app started is ever stopped**, and a unit that
+was already active when the request arrived belongs to someone else and is left alone
+forever. Members are leased independently and started only when the operator presses that
+voice's button.
+
+Two things were added for the sizing this phase introduces:
+
+* **`MODEL_IDLE_OVERRIDES`** — 300 s for members over 12 GiB against the standing 900 s.
+  Release on idle rather than at end of session, as this section asks.
+* **A `MemAvailable` check before a cold start**, refusing with the number rather than
+  letting the OOM killer pick a victim on a swapless box. `MemAvailable`, not `MemFree`:
+  most of the RAM here is page cache holding model weights.
+
+Chandra had no unit, so this repo now ships one — `config/llama-chandra.service`, :8098,
+no `[Install]` section so there is nothing to enable by accident. It is **not installed**;
+the page reports it as "unit not installed" rather than "not running", because those are
+different things to tell someone and only one of them is actionable.
+
+### 7e (as planned)
 
 `llama-olmocr.service` is `disabled` and on-demand (~2.1 s to load). The page must start
 it, and the established pattern on this box is `scripts/vibevoice-lease.sh` — refcounted
@@ -696,7 +906,19 @@ the operator asks for more candidates**, and release on idle rather than at end 
 session. Chandra has no unit yet — it would need one, or a lease helper that starts a
 bare `llama-server`; do not add a resident unit for it.
 
-### Acceptance
+### Acceptance — measured 2026-08-30
+
+`tests/phase7_acceptance.sh` is 45 offline checks and all pass: the refusals, the grouping
+rules, the silent-answer case reproduced against a fake server, the routes, and the wiring
+nothing else validates. `--live IMAGE` is the measurement against the real units.
+
+| criterion | result |
+|---|---|
+| 7a on the operator's laptop | ✅ **the wall came down** — HTTPS on both names, real Let's Encrypt cert, and a browser confirms the secure context by the page's own banner being gone. The last mile is a client that *has* a camera; evo-x3 is headless, so `enumerateDevices()` correctly returns nothing here |
+| capture ≥2000 px, and the UI says what it was | ✅ read from the arriving bytes, warned below 2000, shown beside every answer |
+| a crop returns candidates **under 20 s**, ≥2 members | ⚠️ **half.** The primary answers a crop in **2.1 s for three samples**. A second voice does not fit: Muse is **42 s**, of which ~40 is its own reasoning. The page is built for exactly this — olmOCR-2 lands in two seconds and a second voice is a separate press — but the 20 s figure cannot cover two members on this box, and pretending otherwise would be the kind of unsourced number this repo does not carry. Chandra (5.4 GiB, and the better second voice for strikethroughs) is the untested candidate that might fit; its unit is written and not installed |
+| no capture on disk after the request | ✅ asserted in the acceptance script, which checks the job store is untouched by a read |
+| a struck-out word shows disagreement rather than a pick | ✅ mechanically demonstrated — two members, one character apart, reported as `disagree`. **Not yet on real struck ink**, which needs a student script and is the operator's to run |
 
 - 7a passes on the operator's real laptop at work, not just on the LAN.
 - A capture from the document camera arrives at ≥2000 px on the long edge, and the UI

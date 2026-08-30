@@ -1,0 +1,83 @@
+# Chandra-OCR-2 on :8098 — the hint tool's third voice (PLAN.md phase 7d).
+#
+# Install (operator; this repo cannot):
+#   cp config/llama-chandra.service ~/.config/systemd/user/
+#   systemctl --user daemon-reload
+#   # do NOT enable. The hint page starts it when you ask for this voice and
+#   # app/model_lease.py stops it again after a few minutes idle.
+#
+# WHY THIS REPO OWNS A UNIT halo-prep DELIBERATELY DID NOT WRITE.
+# halo-prep tested this model for unattended batch transcription and rejected it:
+# 10/15 against olmOCR-2's 15/15, where all five misses are ONE page returned as
+# zero bytes — HTTP 200, finish_reason stop, 568 completion tokens, every one of
+# them in reasoning_content with content: ''. In a batch of 200 scripts that page
+# comes back missing and nothing says which. See halo-prep docs/04 "Chandra-OCR-2
+# tested too".
+#
+# That disqualifier does not apply here, and this is the one place the batch
+# ranking inverts. The hint tool is attended: a blank answer announces itself on
+# the screen and the operator presses again. What it buys in exchange is the
+# behaviour no other candidate has — **it marks struck-out text `<del>` instead of
+# resolving it**. On the passage where Muse invented a `not` and reversed the
+# student's claim, Chandra wrote `it may / will <del>fit</del> <del>fit</del> fit`.
+# When the ambiguity IS a strikethrough, which is common on a marked script, this
+# is the only member that shows its working. It also preserved `generalisability`
+# where Muse and olmOCR-2 both normalised the spelling.
+#
+# LICENCE: modified OpenRAIL-M, not Apache-2.0 like olmOCR-2. Local, interactive,
+# single-user use is squarely inside it; that is worth knowing before this model
+# is ever put behind anything shared.
+#
+# NOT in halo-prep's config/models.conf, on purpose: that manifest is the set of
+# units model-switch.sh knows about, and this one is started by an app rather than
+# by a person choosing a model. :8098 is free as of 2026-08-30 — the manifest's
+# highest allocation is :8097.
+
+[Unit]
+Description=llama-server — Chandra-OCR-2 (handwriting hint, third voice)
+After=network-online.target
+
+[Service]
+Type=simple
+
+# Inert on the Vulkan build; kept because it matters the moment this is pointed at
+# build-rocm, exactly as the other units keep it.
+Environment=ROCBLAS_USE_HIPBLASLT=1
+
+# Vulkan, and not a judgement call: as of 2026-08-22 the ROCm trees compute garbage
+# on this GPU (upstream #27506, halo-prep pitfall #24).
+ExecStart=/home/stefan/src/llama.cpp/build-vulkan/bin/llama-server \
+  --model /home/stefan/models/ocr-field/chandra2/chandra-ocr-2.Q8_0.gguf \
+  --mmproj /home/stefan/models/ocr-field/chandra2/chandra-ocr-2.mmproj-f16.gguf \
+  --host 127.0.0.1 \
+  --port 8098 \
+  --ctx-size 16384 \
+  --n-gpu-layers 999 \
+  --parallel 1 \
+  --load-mode dio \
+  --jinja
+#
+# --ctx-size 16384: matches llama-olmocr.service. A full page measured ~4,070 prompt
+#   tokens there and this model reads at a comparable resolution; a crop is far less.
+#   No consumer carries a `limit.context` for :8098, so nothing is coupled to this
+#   number yet — if one is added it must match.
+#
+# NO --temp: unlike llama-olmocr.service this unit does not pin greedy decoding,
+#   because the only consumer is a tool that sets temperature per request to sample
+#   a spread of readings. A unit-level --temp 0 would not break that (the request
+#   wins) but it would state the opposite of what this model is here to do.
+#
+# --load-mode dio: the modern spelling of -dio. Without direct IO large models hang
+#   forever on load. Behaviour is load-bearing, spelling is not.
+#
+# --parallel 1: prefill-bound, one image per request. halo-prep measured more slots
+#   doing nothing for prefill-bound work on :8088 (84.9 s concurrent vs 84.4 s
+#   back-to-back) and reverted it. An image IS the prefill.
+
+Restart=on-failure
+RestartSec=5
+
+# Deliberately no [Install] section. There is nothing to enable: a unit with no
+# install target cannot be started at boot by accident, which is the failure this
+# file most wants to avoid — 5.4 GiB resident for a model used a few seconds at a
+# time, on a box with no swap.

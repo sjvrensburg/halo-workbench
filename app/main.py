@@ -11,7 +11,7 @@ from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse
 
 from app import config, jobs, model_lease
-from app.tools import marker, redact, regex, translate
+from app.tools import hint, marker, redact, regex, translate
 from app.views import templates
 
 
@@ -53,6 +53,10 @@ app.include_router(marker.router)
 app.include_router(redact.router)
 app.include_router(regex.router)
 app.include_router(translate.router)
+# The fifth page is deliberately not a fifth service: a port per tool means a
+# `tailscale serve` registration per tool, living outside this repo and invisible to
+# grep (CLAUDE.md "One port"). It also keeps :8097 and friends on loopback.
+app.include_router(hint.router)
 
 
 @app.get("/healthz")

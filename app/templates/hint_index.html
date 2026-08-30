@@ -1,0 +1,577 @@
+{% extends "base.html" %}
+{% block title %}Handwriting hint — halo-workbench{% endblock %}
+{% block pagetitle %}A second opinion on one squiggle{% endblock %}
+{% block body %}
+<style>
+ /* Sized for the device this is actually used on: an iPad held over a script, in one
+    hand, at arm's length. The first version let the video run to its natural height, so
+    a 4K portrait frame was taller than the screen and the Capture button sat below the
+    fold -- you scrolled down to aim and up again to press. Nothing here may need that.
+
+    svh, not vh: on iOS Safari `vh` is the height with the toolbars COLLAPSED, so a
+    100vh-relative box is taller than what you can see until you scroll. `svh` is the
+    small-viewport height and is the honest one. vh first as the fallback for older
+    engines. */
+ #preview,#shot{display:block;width:100%;background:#000;border-radius:12px;
+   max-height:52vh;max-height:52svh;object-fit:contain}
+ #shot{background:transparent;width:auto;max-width:100%;max-height:58vh;max-height:58svh}
+
+ /* The controls ride ON the video rather than under it, so aiming and pressing are the
+    same glance. Big targets: this is used with a thumb, over someone else's desk. */
+ .viewer{position:relative;margin-top:.6rem}
+ .viewer-bar{position:absolute;left:0;right:0;bottom:0;display:flex;gap:.5rem;
+   align-items:center;justify-content:center;flex-wrap:wrap;padding:.6rem;
+   background:linear-gradient(transparent,rgba(0,0,0,.55));border-radius:0 0 12px 12px}
+ .viewer-bar button,.viewer-bar select{min-height:2.9rem}
+ .viewer-bar button.secondary{gap:.4rem;color:#fff;border-color:rgba(255,255,255,.4);
+   background:rgba(0,0,0,.45)}
+ .viewer-bar button.secondary:hover{background:rgba(0,0,0,.65)}
+ .viewer-bar svg{display:block;flex:none}
+ .viewer-bar .shoot{padding:.6rem 1.6rem;font-size:1.05rem}
+ .viewer-bar select{background:rgba(0,0,0,.55);color:#fff;border-color:rgba(255,255,255,.35);
+   max-width:11rem}
+ /* A zoom slider is only rendered when the camera reports the capability, so it never
+    sits there inert (iOS Safari does not support the zoom constraint at all). */
+ .zoomrow{position:absolute;left:.75rem;right:.75rem;top:.6rem;display:flex;gap:.6rem;
+   align-items:center;color:#fff;text-shadow:0 1px 3px #000}
+ .zoomrow input[type=range]{flex:1;min-height:2.4rem}
+
+ /* What the model will actually be sent, at a size you can judge. This is the "zoom to
+    region" -- the crop IS the zoom, and seeing it is what makes that true rather than a
+    claim. */
+ #cropview{max-height:9rem;max-width:100%;border:1px solid var(--line);border-radius:8px;
+   background:var(--surface);display:block}
+</style>
+
+{# The page's own honesty rule, in the place it will actually be read. Everything below
+   presents a distribution and never a winner; this paragraph is why. #}
+<p class="lede">Point the document camera at the script, drag a box around the word you
+cannot read, and ask. You are looking at the same ink at the same moment — <strong>you are
+the check here</strong>, and nothing on this page has been verified by anything else.</p>
+
+<noscript><div class="warn">This page needs JavaScript: the camera, the crop and the
+results all happen in the browser.</div></noscript>
+
+{# 7a, the wall. getUserMedia is undefined outside a secure context, with no permission
+   prompt and no error worth reading, so the page has to say what happened itself. Hidden
+   by default and revealed by JS: rendering it server-side would mean guessing at the
+   scheme behind `tailscale serve`, and the browser is the only thing that actually knows
+   whether this context is secure. #}
+<div class="warn" id="insecure" hidden>
+  <p><strong>The camera is unavailable on this address.</strong>
+  <code id="origin"></code> is not a secure context, so
+  <code>navigator.mediaDevices</code> does not exist — the browser will not prompt, it
+  simply has no camera API to offer.</p>
+  {# The one-tap fix, because the usual cause is a browser defaulting to http:// on a
+     typed or bookmarked hostname, and the usual client is an iPad where retyping a URL
+     with a scheme is genuinely annoying. Filled in and revealed by JS -- the server
+     cannot see the scheme the browser used, tailscaled proxies both to the same app. #}
+  <p id="upgrade" hidden><a class="button" id="upgrade-link" href="#">Open this page over
+  HTTPS&nbsp;&rarr;</a></p>
+  <p class="muted">The same page is a secure context on <code>https://</code> — a browser
+  given a bare hostname just picks <code>http://</code> first, which is usually all that
+  happened. If the HTTPS link fails rather than loading, the certificate
+  or its <code>tailscale serve --https=443</code> registration is gone; PLAN.md 7a has
+  both commands.</p>
+  <p class="muted">You do not have to move. <strong>Use a file or paste an image below</strong>
+  — that is the whole tool minus the live camera, and it needs no secure context.</p>
+</div>
+
+<div class="card">
+  <h2 style="margin-top:.2rem">1 · The capture</h2>
+
+  <div class="inline" id="camera-controls">
+    <button type="button" id="start">Start camera</button>
+    <label class="button secondary" for="file">Use a file
+      <input type="file" id="file" accept="image/*" hidden></label>
+    <span class="muted">…or paste an image (⌘V / Ctrl-V).</span>
+  </div>
+
+  <div class="viewer" id="viewer" hidden>
+    <video id="preview" playsinline muted></video>
+    <div class="zoomrow" id="zoomrow" hidden>
+      <span>zoom</span><input id="zoom" type="range" min="1" max="1" step="0.1" value="1">
+      <span id="zoomval" class="mono">1.0×</span>
+    </div>
+    <div class="viewer-bar">
+      {# Inline SVG, not a Unicode glyph. `⇄` and `✕` rendered as BLANK BUTTONS on iOS
+         Safari (2026-08-30) -- the system font simply has no glyph for them and there is
+         no fallback to notice. An icon that depends on font coverage is a bet; an SVG
+         path is not. Text beside each one as well, because an unlabelled icon button is
+         a guess even when it does draw. #}
+      <button type="button" class="secondary" id="flip" title="Front / rear camera">
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor"
+             stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M4 8h14M14 4l4 4-4 4M20 16H6M10 12l-4 4 4 4"/>
+        </svg>Flip</button>
+      <button type="button" class="shoot" id="shoot">Capture</button>
+      <select id="devices" aria-label="Camera"></select>
+      <button type="button" class="secondary" id="stop" title="Stop the camera">
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor"
+             stroke-width="2" stroke-linecap="round" aria-hidden="true">
+          <path d="M6 6l12 12M18 6L6 18"/>
+        </svg>Stop</button>
+    </div>
+  </div>
+
+  <p class="muted" id="camera-note">Resolution is the whole ballgame: a 640×480 stream
+  produces a bad hint that costs you more time than no hint. On a tablet the rear camera
+  is the one you want — <strong>Flip</strong> switches. Hold it square over the page and
+  fill the frame with the line, not the whole script; you can crop after, but you cannot
+  add detail that was never captured.</p>
+</div>
+
+<div class="card" id="stage" hidden>
+  <h2 style="margin-top:.2rem">2 · The crop</h2>
+  <p class="muted">Drag a box around the word. A crop is a large gain in effective
+  resolution for free — the model spends the same prompt tokens on a page as on a word.</p>
+  <div id="canvas-wrap" style="position:relative;touch-action:none">
+    <canvas id="shot"></canvas>
+    <div id="box" hidden style="position:absolute;border:2px solid var(--accent);
+         background:color-mix(in oklab,var(--accent) 18%,transparent);pointer-events:none"></div>
+  </div>
+  <p id="dims" class="muted"></p>
+  <div id="cropwrap" hidden>
+    <p class="muted" style="margin-bottom:.3rem">What the model is sent, at its own size:</p>
+    <canvas id="cropview"></canvas>
+  </div>
+  <div class="inline">
+    <button type="button" id="read">Read it</button>
+    <button type="button" class="secondary" id="clear-crop">Whole capture instead</button>
+    <button type="button" class="secondary" id="retake" hidden>Retake</button>
+    <label style="display:inline-flex;align-items:center;gap:.4rem">samples
+      <input id="samples" type="number" min="1" max="8" value="{{ samples }}"
+             style="width:5rem;min-height:2.4rem"></label>
+  </div>
+  <p class="muted" id="samples-note">{{ samples }} samples at temperature
+  {{ temperature }} answers <em>how sure is this model</em>. It is not the same question
+  as <em>is this ink ambiguous</em> — only a second model answers that, and it is asked
+  once rather than sampled, because sampling it would answer the first question again.</p>
+</div>
+
+<div id="results"></div>
+
+<div class="card" id="others" hidden>
+  <h2 style="margin-top:.2rem">Ask another model</h2>
+  <p class="muted">Different inductive biases agreeing is evidence about the ink. One
+  model sampled five times agreeing only means it is confident, which it can be while
+  wrong. Each of these is started when you press it and released after a few minutes idle.</p>
+  <div id="member-buttons" class="inline"></div>
+</div>
+
+<details>
+  <summary>What this is not</summary>
+  <p>Not a transcription service, not a marking aid, and not a batch pipeline. The
+  literature measures over-correction — models silently repairing student spelling — in
+  42–66% of transcriptions across 15 VLMs
+  (<a href="https://arxiv.org/abs/2604.22774">arXiv 2604.22774</a>), and explicit
+  faithfulness prompting buys about four points and no net gain. That risk belongs to
+  <em>batch</em> work, where a transcript is produced now and marked later and nobody
+  re-reads the ink. Here you are beside the transcript, not downstream of it.</p>
+  <p>Nothing captured on this page is written to disk. There is no job directory, no
+  retention window and no log of any reading — the image lives in this tab and, for the
+  length of one request, in the app's memory.</p>
+</details>
+
+<script>
+const MEMBERS = {{ members | tojson }};
+const MIN_LONG_EDGE = {{ min_long_edge }};
+const HTTPS_ORIGINS = {{ https_origins | tojson }};
+
+const $ = (id) => document.getElementById(id);
+const shot = $("shot"), ctx = shot.getContext("2d");
+let stream = null, capture = null;          // capture: {width,height} of the full frame
+let crop = null;                            // {x,y,w,h} in capture pixels
+let answered = [];                          // one entry per member that has answered
+
+// ── 7a: is there a camera API at all ────────────────────────────────────────
+const hasCamera = !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia);
+if (!hasCamera) {
+  $("origin").textContent = location.origin;
+  $("insecure").hidden = false;
+  // Hide the camera BUTTON, not the row: the row also holds "Use a file" and the paste
+  // hint, which are the whole point of still being on this page without a camera. An
+  // earlier version hid the lot and left the fallback invisible exactly when it mattered.
+  $("start").hidden = true;
+  $("camera-note").hidden = true;
+  // Only offer the upgrade when http: is actually the reason. On file:// or a genuinely
+  // certificate-less host the link would just fail, and a button that cannot work is
+  // worse than no button.
+  if (location.protocol === "http:" && HTTPS_ORIGINS.length) {
+    // Prefer the TLS address for the host you are already on -- staying put is less
+    // surprising than being moved to another name mid-task -- and otherwise send you to
+    // the first configured one, which is the Service.
+    const here = HTTPS_ORIGINS.find(o => new URL(o).hostname === location.hostname);
+    $("upgrade-link").href = (here || HTTPS_ORIGINS[0]) + location.pathname + location.search;
+    $("upgrade").hidden = false;
+  }
+}
+
+// ── the camera ─────────────────────────────────────────────────────────────
+// Two ways to choose one, because two kinds of device are in play. On a tablet you want
+// "the one pointing at the desk", which is `facingMode` and one tap; on a laptop with a
+// USB visualiser you want a NAMED device, which is `deviceId`. Offering only the dropdown
+// (the first version) made the common case on the common device the awkward one.
+let facing = "environment", deviceId = null;
+
+try {                                   // remembered across visits; a marking session is
+  const saved = JSON.parse(localStorage.getItem("hint.camera") || "{}");
+  facing = saved.facing || facing; deviceId = saved.deviceId || null;
+} catch (err) { /* private mode, cleared storage: defaults are fine */ }
+
+function remember() {
+  try { localStorage.setItem("hint.camera", JSON.stringify({facing, deviceId})); }
+  catch (err) { /* not worth a word to the user */ }
+}
+
+async function listDevices() {
+  const devices = (await navigator.mediaDevices.enumerateDevices())
+        .filter(d => d.kind === "videoinput");
+  const select = $("devices");
+  select.innerHTML = "";
+  devices.forEach((d, i) => {
+    const option = document.createElement("option");
+    option.value = d.deviceId;
+    // Labels are empty strings until permission is granted -- by design, they identify
+    // hardware. Numbering them keeps the list usable in that window.
+    option.textContent = d.label || `camera ${i + 1}`;
+    option.selected = d.deviceId === deviceId;
+    select.appendChild(option);
+  });
+  $("devices").hidden = devices.length < 2;   // a lone camera needs no picker
+  $("flip").hidden = devices.length < 2;
+  return devices;
+}
+
+async function startCamera() {
+  if (stream) stream.getTracks().forEach(t => t.stop());
+  const video = {width: {ideal: 3840}, height: {ideal: 2160}};
+  // deviceId wins when one was chosen explicitly; otherwise ask by which way it faces.
+  // Both `ideal`, never `exact`: a doc cam that cannot do 4K, or a tablet with one
+  // camera, should give its best rather than throw OverconstrainedError.
+  if (deviceId) video.deviceId = {exact: deviceId}; else video.facingMode = {ideal: facing};
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({video});
+  } catch (err) {
+    if (deviceId) {          // the remembered camera is gone -- a USB cam unplugged
+      deviceId = null; remember(); return startCamera();
+    }
+    const note = $("camera-note");
+    note.className = "warn";
+    note.textContent = `Camera refused: ${err.name} — ${err.message}`;
+    return;
+  }
+  const preview = $("preview");
+  preview.srcObject = stream;
+  $("viewer").hidden = false;
+  await preview.play();
+  // Put the frame and its Capture button on screen, whatever is above them. Sizing the
+  // video to fit the viewport is not enough on its own: on a short landscape window the
+  // lede and the card header can still push the button under the fold, which is the
+  // complaint this whole rework exists to fix.
+  $("viewer").scrollIntoView({behavior: "smooth", block: "center"});
+  const track = stream.getVideoTracks()[0];
+  deviceId = track.getSettings().deviceId || deviceId;
+  remember();
+  await listDevices();                       // labels exist once permission is granted
+  setUpZoom(track);
+  showStreamSize(track);
+}
+
+function showStreamSize(track) {
+  const {width, height} = track.getSettings();
+  if (!width) return;
+  const note = $("camera-note");
+  const long = Math.max(width, height);
+  if (long < MIN_LONG_EDGE) {
+    note.className = "warn";
+    note.textContent = `This camera is giving ${width}×${height} — under ${MIN_LONG_EDGE} px `
+      + `on the long edge. Try the other camera, or move closer and fill the frame with `
+      + `one line: at this resolution the symbols are where it will go wrong.`;
+  }
+}
+
+// Optical/digital zoom, only where the platform actually has it. Chrome on Android
+// exposes it; iOS Safari does not implement the zoom constraint at all, so the row stays
+// hidden there and the crop is the zoom instead. Never render a control that cannot work.
+function setUpZoom(track) {
+  const caps = track.getCapabilities ? track.getCapabilities() : {};
+  const row = $("zoomrow"), slider = $("zoom");
+  if (!caps.zoom) { row.hidden = true; return; }
+  slider.min = caps.zoom.min; slider.max = caps.zoom.max;
+  slider.step = caps.zoom.step || 0.1;
+  slider.value = track.getSettings().zoom || caps.zoom.min;
+  $("zoomval").textContent = (+slider.value).toFixed(1) + "×";
+  row.hidden = false;
+  slider.oninput = async () => {
+    $("zoomval").textContent = (+slider.value).toFixed(1) + "×";
+    try { await track.applyConstraints({advanced: [{zoom: +slider.value}]}); }
+    catch (err) { row.hidden = true; }      // it claimed the capability and then refused
+  };
+}
+
+if (hasCamera) navigator.mediaDevices.ondevicechange = listDevices;
+
+$("start").addEventListener("click", startCamera);
+
+$("flip").addEventListener("click", () => {
+  // Flip means "the other way round", so the remembered deviceId has to go -- it pins the
+  // camera and would win over facingMode, making the button do nothing.
+  facing = facing === "environment" ? "user" : "environment";
+  deviceId = null; remember();
+  startCamera();
+});
+
+$("devices").addEventListener("change", (e) => {
+  deviceId = e.target.value; remember(); startCamera();
+});
+
+$("stop").addEventListener("click", () => {
+  if (stream) stream.getTracks().forEach(t => t.stop());
+  stream = null; $("viewer").hidden = true;
+});
+
+$("shoot").addEventListener("click", async () => {
+  const track = stream.getVideoTracks()[0];
+  // Doc cams and phone cameras commonly expose a much higher STILL resolution than their
+  // video feed, so takePhoto beats grabbing the preview where it exists. Chrome only.
+  if (window.ImageCapture) {
+    try {
+      const blob = await new ImageCapture(track).takePhoto();
+      return drawBitmap(await createImageBitmap(blob));
+    } catch (err) { /* some drivers advertise it and then throw */ }
+  }
+  drawBitmap(await createImageBitmap($("preview")));
+});
+
+// ── file and paste, which need no secure context ────────────────────────────
+$("file").addEventListener("change", async (e) => {
+  const file = e.target.files[0];
+  if (file) drawBitmap(await createImageBitmap(file));
+});
+addEventListener("paste", async (e) => {
+  for (const item of e.clipboardData.files) {
+    if (item.type.startsWith("image/")) drawBitmap(await createImageBitmap(item));
+  }
+});
+
+function drawBitmap(bitmap) {
+  shot.width = bitmap.width; shot.height = bitmap.height;
+  ctx.drawImage(bitmap, 0, 0);
+  capture = {width: bitmap.width, height: bitmap.height};
+  crop = null; $("box").hidden = true; $("cropwrap").hidden = true;
+  $("stage").hidden = false;
+  $("retake").hidden = !stream;
+  $("results").innerHTML = ""; $("others").hidden = true; answered = [];
+  showDims();
+  $("stage").scrollIntoView({behavior: "smooth", block: "start"});
+}
+
+$("retake").addEventListener("click", () =>
+  $("viewer").scrollIntoView({behavior: "smooth", block: "center"}));
+
+// The answer to "there is no zoom": there is, and it is the crop -- but only if you can
+// SEE it. This renders the selection at its own pixel size (capped), so a box drawn round
+// the wrong word, or round nothing, is obvious before a model is asked.
+function showCropView() {
+  const wrap = $("cropwrap"), view = $("cropview");
+  if (!crop) { wrap.hidden = true; return; }
+  view.width = Math.round(crop.w); view.height = Math.round(crop.h);
+  view.getContext("2d").drawImage(shot, crop.x, crop.y, crop.w, crop.h,
+                                  0, 0, view.width, view.height);
+  wrap.hidden = false;
+}
+
+function showDims() {
+  const long = Math.max(capture.width, capture.height);
+  // Asserting what ARRIVED, not what was asked for. The 15/15 samples were 2851-4096 px.
+  const warn = long < MIN_LONG_EDGE
+    ? ` — below ${MIN_LONG_EDGE} px on the long edge. Expect symbol errors that look like the model's fault and are not.`
+    : "";
+  const cropText = crop ? ` · crop ${Math.round(crop.w)}×${Math.round(crop.h)}` : " · no crop: the whole capture";
+  $("dims").textContent = `Captured ${capture.width}×${capture.height}${cropText}${warn}`;
+  $("dims").className = warn ? "warn" : "muted";
+}
+
+// ── drag a box ──────────────────────────────────────────────────────────────
+let dragging = null;
+shot.addEventListener("pointerdown", (e) => {
+  shot.setPointerCapture(e.pointerId);
+  dragging = pointAt(e); crop = null; $("box").hidden = false; paintBox(dragging, dragging);
+});
+shot.addEventListener("pointermove", (e) => { if (dragging) paintBox(dragging, pointAt(e)); });
+shot.addEventListener("pointerup", (e) => {
+  if (!dragging) return;
+  const end = pointAt(e), scale = shot.width / shot.getBoundingClientRect().width;
+  const box = corners(dragging, end);
+  dragging = null;
+  if (box.w < 8 || box.h < 8) {   // a tap, not a drag
+    crop = null; $("box").hidden = true; showCropView(); return showDims();
+  }
+  crop = {x: box.x * scale, y: box.y * scale, w: box.w * scale, h: box.h * scale};
+  showDims(); showCropView();
+});
+function pointAt(e) {
+  const r = shot.getBoundingClientRect();
+  return {x: e.clientX - r.left, y: e.clientY - r.top};
+}
+function corners(a, b) {
+  return {x: Math.min(a.x, b.x), y: Math.min(a.y, b.y),
+          w: Math.abs(a.x - b.x), h: Math.abs(a.y - b.y)};
+}
+function paintBox(a, b) {
+  const box = corners(a, b), el = $("box"), canvasBox = shot.getBoundingClientRect(),
+        wrap = $("canvas-wrap").getBoundingClientRect();
+  el.style.left = (box.x + canvasBox.left - wrap.left) + "px";
+  el.style.top = (box.y + canvasBox.top - wrap.top) + "px";
+  el.style.width = box.w + "px"; el.style.height = box.h + "px";
+}
+$("clear-crop").addEventListener("click", () => {
+  crop = null; $("box").hidden = true; showCropView(); showDims();
+});
+
+// ── asking ──────────────────────────────────────────────────────────────────
+function currentImage() {
+  if (!crop) return shot.toDataURL("image/jpeg", 0.95);
+  const cut = document.createElement("canvas");
+  cut.width = Math.round(crop.w); cut.height = Math.round(crop.h);
+  cut.getContext("2d").drawImage(shot, crop.x, crop.y, crop.w, crop.h,
+                                 0, 0, cut.width, cut.height);
+  return cut.toDataURL("image/jpeg", 0.95);
+}
+
+$("read").addEventListener("click", () => {
+  $("results").innerHTML = ""; answered = [];
+  ask(MEMBERS.find(m => m.primary) || MEMBERS[0]);
+});
+
+async function ask(member) {
+  const card = document.createElement("div");
+  card.className = "card";
+  card.innerHTML = `<h2 style="margin-top:.2rem">${member.name}</h2>
+    <p class="muted">asking… the model is started if it is not running, which takes a
+    few seconds. Everything here shares one GPU, so this can also be queued behind a
+    conversion.</p>`;
+  $("results").appendChild(card);
+  card.scrollIntoView({behavior: "smooth", block: "nearest"});
+
+  let data;
+  try {
+    const response = await fetch("/hint/read", {
+      method: "POST", headers: {"content-type": "application/json"},
+      body: JSON.stringify({
+        member: member.id, image: currentImage(),
+        mode: crop ? "crop" : "page",
+        // Only the primary is sampled for spread. A second voice answers a different
+        // question and answers it once -- the server's default -- so the box is not sent
+        // for it: three of Muse's 8-12 s samples would blow the operator's patience and
+        // buy nothing, since sampling one model cannot tell you the ink is ambiguous.
+        samples: member.primary ? Math.max(1, Math.min(8, +$("samples").value || 1)) : undefined,
+        capture_px: capture,
+      }),
+    });
+    data = await response.json();
+  } catch (err) { data = {error: String(err)}; }
+  render(card, member, data);
+  if (data.readings && data.readings.length) {
+    answered = answered.filter(a => a.id !== member.id)
+                       .concat([{id: member.id, readings: data.readings}]);
+  }
+  $("others").hidden = false;
+  buildMemberButtons();          // after `answered`, or the model just asked reappears
+  if (answered.length) updateAgreement();
+}
+
+function render(card, member, data) {
+  card.innerHTML = "";
+  const title = document.createElement("h2");
+  title.style.marginTop = ".2rem"; title.textContent = member.name;
+  card.appendChild(title);
+
+  if (data.error) card.appendChild(el("div", "warn", data.error));
+  if (data.silent_note) card.appendChild(el("div", "warn", data.silent_note));
+  if (data.low_resolution)
+    card.appendChild(el("div", "warn",
+      `The capture is ${data.capture_px.width}×${data.capture_px.height} — under ` +
+      `${data.min_long_edge} px on the long edge. Read this answer with that in mind.`));
+
+  const readings = data.readings || [];
+  if (!readings.length && !data.error)
+    card.appendChild(el("p", "muted", "no reading came back."));
+
+  readings.forEach((reading, i) => {
+    const row = document.createElement("p");
+    row.style.margin = ".5rem 0";
+    const strong = document.createElement("span");
+    strong.className = "mono";
+    strong.style.fontSize = i === 0 ? "1.25rem" : "1.05rem";
+    // textContent, always: a member that writes <del>fit</del> has READ the strikethrough,
+    // and that markup is the most honest thing on the page. Shown literally, never parsed.
+    strong.textContent = reading.text;
+    row.appendChild(strong);
+    const count = el("span", "muted", ` — ${reading.count} of ${data.samples.length}` +
+                                      (reading.truncated ? " · hit the token ceiling" : ""));
+    count.style.marginLeft = ".5rem";
+    row.appendChild(count);
+    card.appendChild(row);
+  });
+
+  if (data.samples) {
+    const seconds = data.samples.reduce((t, s) => t + s.elapsed, 0).toFixed(1);
+    const cached = data.samples.at(-1)?.cached_tokens;
+    card.appendChild(el("p", "muted",
+      `${data.samples.length} sample(s) at temperature ${data.temperature} in ${seconds}s` +
+      (data.started_wait ? ` (+${data.started_wait}s starting the model)` : "") +
+      (cached ? ` · ${cached} prompt tokens reused` : "") +
+      (data.crop_px ? ` · ${data.crop_px.width}×${data.crop_px.height} sent` : "")));
+  }
+}
+
+function el(tag, className, text) {
+  const node = document.createElement(tag);
+  node.className = className; node.textContent = text;
+  return node;
+}
+
+function buildMemberButtons() {
+  const wrap = $("member-buttons");
+  wrap.innerHTML = "";
+  MEMBERS.filter(m => !answered.some(a => a.id === m.id)).forEach(member => {
+    const button = document.createElement("button");
+    button.className = "secondary";
+    button.textContent = member.installed
+      ? `${member.name} · ~${member.approx_gib} GiB`
+      : `${member.name} — unit not installed`;
+    button.disabled = !member.installed;
+    button.title = member.note;
+    button.addEventListener("click", () => ask(member));
+    wrap.appendChild(button);
+  });
+  const notes = document.createElement("p");
+  notes.className = "muted";
+  notes.textContent = MEMBERS.map(m => `${m.name}: ${m.note}`).join("  ");
+  wrap.appendChild(notes);
+}
+
+async function updateAgreement() {
+  const response = await fetch("/hint/agreement", {
+    method: "POST", headers: {"content-type": "application/json"},
+    body: JSON.stringify({members: answered}),
+  });
+  const data = await response.json();
+  let banner = $("agreement");
+  if (!banner) {
+    banner = document.createElement("div");
+    banner.id = "agreement";
+    $("results").prepend(banner);
+  }
+  // Disagreement is the finding, not an error state -- so it gets the same weight as
+  // agreement rather than a red box.
+  banner.className = data.state === "disagree" ? "warn" : "card";
+  banner.textContent = ({
+    agree: "The models agree.", disagree: "The models disagree.",
+    insufficient: "One model has answered.",
+  })[data.state] + " " + data.note;
+}
+</script>
+{% endblock %}

@@ -7,8 +7,9 @@ this repository.
 
 A small FastAPI app on the GMKtec EVO-X3 that exposes **specialist, verifiable
 local-model tasks** to a browser over Tailscale: PDF→markdown via marker, regex
-synthesis from examples, assisted redaction, and protected-span Chinese↔English
-translation. One port, one unit, four pages.
+synthesis from examples, assisted redaction, protected-span Chinese↔English
+translation, and a handwriting hint tool that reads one squiggle several ways. One port,
+one unit, five pages.
 
 It is a sibling of `../halo-prep`, which is the runbook that built the box and holds
 the llama-server units, the model manifest and the pitfall list. **Read
@@ -61,6 +62,8 @@ tests/phase5_acceptance.sh           # regex: the runner and the loop's contract
 tests/phase5_acceptance.sh --cases   # ...plus ten real cases against :8092
 tests/phase6_acceptance.sh           # translate: spans, checks, the vendored masker's sha256
 tests/phase6_acceptance.sh --live    # ...plus a real round trip through :8094
+tests/phase7_acceptance.sh           # hint: the spread, the refusals, the silent-answer case
+tests/phase7_acceptance.sh --live CROP.png   # ...plus the real OCR models
 ```
 
 Everything without a flag is offline and GPU-free, so it runs on the authoring laptop
@@ -119,12 +122,30 @@ curl -s localhost:8092/props                             # tune prompts against 
   ordering comment is load-bearing; two shipped-and-caught bugs are recorded in it.
 - `app/tools/translate.py` — both modes. Same language on both sides means rewrite, and
   that routes to a different model, not just a different prompt.
+- `app/handwriting.py`, `app/tools/hint.py` — the fifth tool, and the one that is not a
+  job: interactive, ephemeral, nothing on disk. `handwriting.py` is the pure half — one
+  request to a VLM, and `group()`/`agreement()`, which count readings and never merge,
+  average or rank them. An empty `content` with the tokens spent in `reasoning_content`
+  is a *reported result*, not a non-answer; halo-prep measured exactly that on Chandra.
 - `app/model_lease.py` — starts a `MANAGED_UNITS` unit on demand and stops it after
-  `MODEL_IDLE_SECONDS`. **Only ever stops a unit it started**: a unit already active
+  `MODEL_IDLE_SECONDS` (or `MODEL_IDLE_OVERRIDES`, which is shorter for the ~20 GiB hint
+  members). It refuses a cold start whose model does not fit in `MemAvailable`: no swap
+  here, and an OOM kill picks its own victim. **Only ever stops a unit it started**: a unit already active
   when the job arrived belongs to someone else and is left alone forever. That one rule
   replaces halo-prep's refcounting, because this queue is one deep.
 - `app/views.py`, `app/templates/` — the shared Jinja environment and the pages. Server
   rendered, no build step and no npm; the job pages poll themselves and are `no-store`.
+  `hint_index.html` is the exception in size, because the camera, the crop and the
+  results are all client side. **It is used from an iPad held over a desk**, which is why
+  its heights are in `svh` (on iOS `vh` is the toolbars-collapsed height, so a `vh` box
+  overflows the screen), why the capture controls overlay the video rather than following
+  it, and why camera choice is `facingMode` with the device dropdown as the fallback
+  rather than the other way round. Every one of those was a fault found by using it.
+- **Icons are inline SVG, never a Unicode glyph.** `⇄` and `✕` rendered as *blank buttons*
+  on iOS Safari 2026-08-30 — the system font has no glyph and nothing falls back or warns.
+  The same sweep found `✓`/`✗` on the translate page, where a blank does not merely look
+  wrong but erases whether a check passed; those are now the words. A glyph outside Latin
+  and common punctuation is a bet on font coverage on a device you are not holding.
 - `app/jobs.py` — the job store and the one worker thread. Tools register a handler
   with `@jobs.register("name")`; it either returns (`done`) or raises (`failed`).
   There is no third outcome on purpose — a result the verifier did not pass must
@@ -137,11 +158,24 @@ curl -s localhost:8092/props                             # tune prompts against 
 - `config/halo-workbench.service` — the resident unit. `config/llama-hymt2.service` is
   the translate model's, installed but **not enabled**: on-demand is the point.
 
-Build order and per-phase acceptance tests are in `PLAN.md`. **Phases 0–6 are done
-(2026-08-29): all four tools are live and the service is installed and enabled. Phase 7
-(the handwriting hint tool) is planned only** — and 7a is a wall, not a step: it needs
-HTTPS, because `getUserMedia` is undefined outside a secure context and every serve
-registration here is HTTP. Nothing in phase 7 proceeds until that is solved.
+Build order and per-phase acceptance tests are in `PLAN.md`. **Phases 0–7 are done
+(7 on 2026-08-30): all five tools are live and the service is installed and enabled.**
+
+**7a was closed on 2026-08-30 and it added a fifth and sixth serve registration.**
+`getUserMedia` is undefined outside a secure context, so HTTPS Certificates was enabled in
+the tailnet admin console and `--https=443` registered for both the node and the Service.
+Two things to know before touching it:
+
+- **The camera page must be reached by its FULL DNS name** —
+  `https://evo-x3.tail80adad.ts.net/hint` or
+  `https://halo-workbench.tail80adad.ts.net/hint`. The bare `http://halo-workbench/` this
+  app prefers everywhere else is not a secure context and the certificate is not issued
+  for it.
+- **Enabling certificates published these names to public CT logs, permanently.** That is
+  a done and irreversible trade, not a setting to toggle back and forth.
+
+Do not "work around" a future TLS problem with a self-signed certificate or a LAN
+listener: the app binds `127.0.0.1` and that binding is the whole access control.
 
 ## Ports
 
@@ -152,7 +186,10 @@ registration here is HTTP. Nothing in phase 7 proceeds until that is solved.
 | 8088 | Open Notebook — Ornith-1.5-35B-A3B, prose | same-language *rewrite* |
 | 8094 | this repo — Hy-MT2-7B, `llama-hymt2` | zh↔en translate; started on demand |
 | 8086 | Open Notebook's vector search | not used; never touched |
-| 8097 | olmOCR-2-7B | phase 7 only; not used yet |
+| 8097 | olmOCR-2-7B | `/hint`'s primary voice; started on demand |
+| 8084 | Muse Glimmer 30B (halo-prep's) | `/hint`, second voice, on request only |
+| 8090 | Qwen3.8-27B (halo-prep's) | `/hint`, on request only |
+| 8098 | this repo — Chandra-OCR-2, `llama-chandra` | `/hint`, third voice; unit ships here, not installed by default |
 
 ## The rule the whole project is organised around
 
@@ -171,6 +208,7 @@ The four verifiers, concretely:
 | redact | re-extract the output text — `pdftotext` included — and confirm no removed span survives it |
 | regex | the user's own positive/negative examples, executed |
 | translate | protected spans present as often as the source has them, plus residual-script and passthrough checks (a rewrite adds: no number or citation changed) |
+| hint | **the operator's own eye, per request, by construction** — they are looking at the same ink at the same moment. Do not bolt a synthetic verifier onto this to satisfy the thesis on a technicality; what the thesis asks is that no quality claim goes unchecked, and here none can. What the page owes instead is never to *invite* trust: several readings, never one; disagreement shown as the finding; a silent answer announced |
 
 If you find yourself adding a code path that returns a result the verifier did not
 pass, stop. Fail the job instead.
@@ -216,6 +254,12 @@ pass, stop. Fail the job instead.
   `pdftotext` output, then an LLM's own transcription — was written into marker's
   output path and went undetected. That script exists because prose in a skill file is
   advisory and an exit code is not. The same applies to code here.
+- **The hint tool is the one thing here that is not a job, and nothing it sees is
+  stored.** Interactive, ephemeral, no artefact: a capture is a student's script and
+  carries a name, so it lives in the browser tab and — for the length of one request — in
+  this process, and never in `~/.local/state`. It is serialised by its own lock rather
+  than by the queue, because a hint that takes twenty minutes is a failed hint while a
+  conversion that does is a normal one. Nothing in `app/tools/hint.py` logs a reading.
 - **Jobs are directories, not rows.** `~/.local/state/halo-workbench/jobs/<id>/`.
   Survives a restart, inspectable with `ls` and `cat` when a user reports something
   odd. Do not introduce a database.
