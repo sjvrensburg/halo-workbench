@@ -35,21 +35,39 @@ in the conversation.
 
 ```bash
 scripts/bootstrap.sh              # create ~/venvs/workbench (--force recreates it)
+scripts/fetch-privacy-filter.sh   # ~920 MB of ONNX into ~/models/privacy-filter, once
 scripts/dev.sh                    # foreground uvicorn on 127.0.0.1:8093, --reload
-curl -s localhost:8093/healthz    # {"status":"ok","version":...} -- liveness only
+curl -s localhost:8093/healthz    # {"status":"ok","version":...,"queued":N} -- liveness only
 ```
 
-There is no requirements file, no lockfile and no lint or test runner yet: the
-dependency list lives in `scripts/bootstrap.sh` (fastapi, uvicorn, jinja2,
-python-multipart) and `tests/` is empty. Add a dependency by editing that script, so
-`--force` still reproduces the venv from nothing. The venv is deliberately *not*
-`~/venvs/marker` — see the script's header for why.
+There is no requirements file, no lockfile and no lint runner: the dependency list
+lives in `scripts/bootstrap.sh` (fastapi, uvicorn, jinja2, python-multipart, pymupdf,
+onnxruntime, tokenizers), each entry with a comment saying which tool needs it. Add a
+dependency by editing that script, so `--force` still reproduces the venv from nothing.
+The venv is deliberately *not* `~/venvs/marker` — see the script's header for why.
 
-Acceptance tests live in `PLAN.md`, one per phase. Where a phase's criteria are
-about the *process* rather than an output they are scripted — `tests/phase1_acceptance.sh`
-runs the queue's serialisation and `kill -9` recovery against a throwaway state dir —
-otherwise they are run by hand against the running app. That is the intended shape: the checks that matter here are the
-per-request verifiers, not a suite that runs at build time.
+### Tests
+
+There is no pytest and no suite that runs at build time; that is deliberate, because
+the checks that matter here are the per-request verifiers. What exists is one
+acceptance script per phase, each a thin `bash` wrapper around a `tests/phaseN_driver.py`
+run under the venv — so a "single test" is one of these scripts:
+
+```bash
+tests/phase1_acceptance.sh           # the queue: serialisation, kill -9 recovery, the flock
+tests/phase2_acceptance.sh           # marker: what the sidecar verifier refuses (no GPU)
+tests/phase4_acceptance.sh           # redact: patterns, survivors(), pdftotext on the output
+tests/phase5_acceptance.sh           # regex: the runner and the loop's contract
+tests/phase5_acceptance.sh --cases   # ...plus ten real cases against :8092
+tests/phase6_acceptance.sh           # translate: spans, checks, the vendored masker's sha256
+tests/phase6_acceptance.sh --live    # ...plus a real round trip through :8094
+```
+
+Everything without a flag is offline and GPU-free, so it runs on the authoring laptop
+too. `VENV=` overrides the interpreter; phases 1 and 2 spin up their own uvicorn on a
+throwaway port and `WORKBENCH_STATE_DIR`, so they do not touch the resident service's
+state. Where a phase's criteria are about an output rather than a process they stay in
+`PLAN.md` and are run by hand against the running app.
 
 The unit is **installed and enabled** as of 2026-08-29 (PLAN.md phase 3), so a dev
 server and the resident service now compete for both the port and the state directory.
@@ -73,10 +91,11 @@ curl -s localhost:8092/props                             # tune prompts against 
 - `app/config.py` — **read this first.** It is not settings; it is every value shared
   with something outside the process (the port, the marker wrapper's path, the two
   model endpoints, the state dir), and each one names its other half, because nothing
-  validates the duplication. `TRANSLATE_ENDPOINT` is explicitly provisional pending
-  the phase 6a bake-off.
-- `app/main.py` — FastAPI app, currently `/` and `/healthz` only. `/healthz` must
-  never touch a model server: it has to stay answerable while `:8092` is mid-turn.
+  validates the duplication. Every endpoint also reads an env override
+  (`WORKBENCH_*`), which is how the acceptance drivers point at throwaway state.
+- `app/main.py` — FastAPI app: `/`, `/healthz`, the four tool routers, and the
+  `lifespan` that owns the worker thread and the model lease. `/healthz` must never
+  touch a model server: it has to stay answerable while `:8092` is mid-turn.
 - `app/tools/` — one module per tool, each holding its routes, its job handler and
   its verifier together. `marker.py` is the pattern: `@jobs.register("marker")` for the
   work, an `APIRouter` for the pages, and `verify()` re-run at download time so a `.md`
@@ -100,17 +119,40 @@ curl -s localhost:8092/props                             # tune prompts against 
   ordering comment is load-bearing; two shipped-and-caught bugs are recorded in it.
 - `app/tools/translate.py` — both modes. Same language on both sides means rewrite, and
   that routes to a different model, not just a different prompt.
-- `app/views.py`, `app/templates/` — the shared Jinja environment and the pages.
+- `app/model_lease.py` — starts a `MANAGED_UNITS` unit on demand and stops it after
+  `MODEL_IDLE_SECONDS`. **Only ever stops a unit it started**: a unit already active
+  when the job arrived belongs to someone else and is left alone forever. That one rule
+  replaces halo-prep's refcounting, because this queue is one deep.
+- `app/views.py`, `app/templates/` — the shared Jinja environment and the pages. Server
+  rendered, no build step and no npm; the job pages poll themselves and are `no-store`.
 - `app/jobs.py` — the job store and the one worker thread. Tools register a handler
   with `@jobs.register("name")`; it either returns (`done`) or raises (`failed`).
   There is no third outcome on purpose — a result the verifier did not pass must
   raise. Startup takes an exclusive `flock` on the state directory (a second instance
   refuses to start rather than recovering the first one's live job), reaps `running`
   jobs as `interrupted` and re-queues `queued` ones.
-- `scripts/`, `config/halo-workbench.service` — the venv, dev server, and unit.
+- `scripts/` — the venv, the dev server, the privacy-filter fetch, and
+  `bakeoff-translate.py`, which produced `docs/translation-bakeoff.md` and the JSON in
+  `tests/bakeoff/`. Re-run it before contradicting the model choice.
+- `config/halo-workbench.service` — the resident unit. `config/llama-hymt2.service` is
+  the translate model's, installed but **not enabled**: on-demand is the point.
 
-Build order and per-phase acceptance tests are in `PLAN.md`; phase 0 (scaffold) is
-done, phases 1–6 are not started.
+Build order and per-phase acceptance tests are in `PLAN.md`. **Phases 0–6 are done
+(2026-08-29): all four tools are live and the service is installed and enabled. Phase 7
+(the handwriting hint tool) is planned only** — and 7a is a wall, not a step: it needs
+HTTPS, because `getUserMedia` is undefined outside a secure context and every serve
+registration here is HTTP. Nothing in phase 7 proceeds until that is solved.
+
+## Ports
+
+| Port | Whose | This app |
+|---|---|---|
+| 8093 | this app | the only thing it listens on, `127.0.0.1` |
+| 8092 | Hermes — Ornith-1.5-9B, spliced terse template | regex synthesis, PII fallback |
+| 8088 | Open Notebook — Ornith-1.5-35B-A3B, prose | same-language *rewrite* |
+| 8094 | this repo — Hy-MT2-7B, `llama-hymt2` | zh↔en translate; started on demand |
+| 8086 | Open Notebook's vector search | not used; never touched |
+| 8097 | olmOCR-2-7B | phase 7 only; not used yet |
 
 ## The rule the whole project is organised around
 

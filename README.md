@@ -24,9 +24,16 @@ verifier that runs on every request:
 | **regex** | give examples, get a regex | your examples, actually executed against the pattern |
 | **translate** | zh↔en translate/paraphrase, protecting spans you mark | protected spans round-trip byte-identical; residual-script check |
 
-**Status: phase 6 — all four tools work.** Job queue, marker, assisted redaction,
-regex-from-examples, and translate/rewrite; the service is installed and reachable on
-the tailnet. `PLAN.md` is the build plan; `CLAUDE.md` is the decisions.
+**Status: phases 0–6 done — all four tools work.** Job queue, marker, assisted
+redaction, regex-from-examples, and translate/rewrite; the service is installed and
+reachable on the tailnet. `PLAN.md` is the build plan; `CLAUDE.md` is the decisions.
+
+**Phase 7 — a handwriting hint tool — is planned, not built.** A crop of a squiggle
+goes to an ensemble of OCR models and comes back as several candidate readings with
+their support, for an operator who is looking at the same ink at the same moment. It
+is blocked on 7a, which is a wall rather than a step: `getUserMedia` exists only in a
+secure context, every `tailscale serve` registration here is HTTP, and no camera means
+no tool. Nothing after it proceeds until that is solved.
 
 ## Run it (development)
 
