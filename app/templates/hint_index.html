@@ -112,6 +112,11 @@ results all happen in the browser.</div></noscript>
           <path d="M6 6l12 12M18 6L6 18"/>
         </svg>Stop</button>
     </div>
+    {# Shown only when the browser enumerated exactly one camera. Without it, a visualiser
+       Chrome never saw and a visualiser it saw but would not open look identical from
+       here -- the picker hides itself in the first case and the user has nothing to read.
+       Reported 2026-08-31 against a USB visualiser on a Linux laptop. #}
+    <p class="muted" id="devices-note" hidden></p>
   </div>
 
   <p class="muted" id="camera-note">Resolution is the whole ballgame: a 640×480 stream
@@ -240,27 +245,76 @@ async function listDevices() {
   });
   $("devices").hidden = devices.length < 2;   // a lone camera needs no picker
   $("flip").hidden = devices.length < 2;
+  const note = $("devices-note");
+  note.hidden = devices.length !== 1;
+  if (devices.length === 1) {
+    note.textContent = `Only one camera is visible to the browser`
+      + (devices[0].label ? ` (${devices[0].label})` : "")
+      + `. A visualiser that is not in this list has not been offered by the browser at `
+      + `all: check it is a UVC device the laptop exposes (v4l2-ctl --list-devices), that `
+      + `no other app holds it, and that it is not blocked under `
+      + `chrome://settings/content/camera. This list refreshes on plug and unplug.`;
+  }
   return devices;
 }
 
-async function startCamera() {
-  if (stream) stream.getTracks().forEach(t => t.stop());
+// `chosen` means the user just picked this camera from the dropdown, which changes what a
+// failure is allowed to do: see the catch. `retried` guards the one NotReadableError retry.
+async function startCamera(chosen, retried) {
+  const previous = stream;
+  const previousDeviceId =
+        previous ? (previous.getVideoTracks()[0].getSettings().deviceId || null) : null;
+  // Release the old stream FIRST only when we are re-opening the same camera: V4L2 hands
+  // out one capture handle per device, so that open would lose against ourselves. When
+  // switching to a different device, hold the old stream until the new one is running --
+  // a refusal then leaves the previous picture on screen instead of a black rectangle,
+  // and there is still something to fall back to.
+  if (previous && (!deviceId || deviceId === previousDeviceId)) {
+    previous.getTracks().forEach(t => t.stop());
+    stream = null;
+  }
   const video = {width: {ideal: 3840}, height: {ideal: 2160}};
   // deviceId wins when one was chosen explicitly; otherwise ask by which way it faces.
   // Both `ideal`, never `exact`: a doc cam that cannot do 4K, or a tablet with one
   // camera, should give its best rather than throw OverconstrainedError.
   if (deviceId) video.deviceId = {exact: deviceId}; else video.facingMode = {ideal: facing};
+  let next;
   try {
-    stream = await navigator.mediaDevices.getUserMedia({video});
+    next = await navigator.mediaDevices.getUserMedia({video});
   } catch (err) {
-    if (deviceId) {          // the remembered camera is gone -- a USB cam unplugged
+    // NotReadableError on Linux is usually "the previous capture has not finished letting
+    // go" rather than a broken camera -- the kernel releases /dev/videoN after the close
+    // returns, so an open microseconds later loses. One retry after a beat is the whole
+    // fix; a second failure is a real one.
+    if (err.name === "NotReadableError" && !retried) {
+      await new Promise(r => setTimeout(r, 400));
+      return startCamera(chosen, true);
+    }
+    // Falling back to the default camera is right for a REMEMBERED device that has since
+    // been unplugged, and wrong for one the user just picked: there it silently hands
+    // back the built-in webcam and looks exactly like the dropdown doing nothing. That
+    // was the bug -- an explicit choice fails loudly and keeps its selection.
+    if (deviceId && !chosen) {         // the remembered camera is gone -- USB cam unplugged
       deviceId = null; remember(); return startCamera();
     }
     const note = $("camera-note");
     note.className = "warn";
-    note.textContent = `Camera refused: ${err.name} — ${err.message}`;
+    if (chosen) {
+      note.textContent = `That camera refused to open: ${err.name} — ${err.message}. `
+        + `A USB visualiser is usually held by something else (another tab, Cheese, a `
+        + `video call), or the entry is one of the extra non-capture nodes such a device `
+        + `registers — try the other entries in the list.`;
+      deviceId = previousDeviceId;     // keep the picker honest about what is actually live
+      remember();
+      await listDevices();
+    } else {
+      note.textContent = `Camera refused: ${err.name} — ${err.message}`;
+    }
+    if (!stream) $("viewer").hidden = true;
     return;
   }
+  if (previous && previous !== next) previous.getTracks().forEach(t => t.stop());
+  stream = next;
   const preview = $("preview");
   preview.srcObject = stream;
   $("viewer").hidden = false;
@@ -323,7 +377,7 @@ $("flip").addEventListener("click", () => {
 });
 
 $("devices").addEventListener("change", (e) => {
-  deviceId = e.target.value; remember(); startCamera();
+  deviceId = e.target.value; remember(); startCamera(true);
 });
 
 $("stop").addEventListener("click", () => {
