@@ -300,6 +300,24 @@ def offline() -> int:
         check("token/logprob detail did not follow the reading onto disk",
               all("tokens" not in r and "alternates" not in r for r in meta["readings"]))
 
+        # A no-crop read ("Whole capture instead") sends mode="page" with the WHOLE
+        # frame as `image` -- caught 2026-09-02 when the operator asked exactly this
+        # question. Confirmed that case should be retained too, not silently skipped,
+        # so this locks in that it actually is, and with the whole image, not a crop.
+        Fake.script = [{"content": "a page of writing"}]
+        Fake.seen = []
+        before_page = set(config.HINTS_DIR.glob("*"))
+        client.post("/hint/read", json={
+            "member": "olmocr", "image": data_url(images["png"], "image/png"),
+            "mode": "page", "samples": 1})
+        page_entries = set(config.HINTS_DIR.glob("*")) - before_page
+        check("a no-crop read is retained too, not silently skipped", len(page_entries) == 1)
+        page_entry = next(iter(page_entries))
+        check("...and what's kept is the WHOLE capture that was actually sent",
+              (page_entry / "crop.png").read_bytes() == images["png"])
+        check("...tagged as a page, not a crop",
+              json.loads((page_entry / "meta.json").read_text())["mode"] == "page")
+
         # prune(now=...) takes `now`, not a cutoff: it subtracts the retention window
         # itself, so `now` must be further out than that window for a just-created
         # entry to have aged past it.

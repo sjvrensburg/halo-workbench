@@ -952,16 +952,22 @@ Feasibility confirmed live against `:8097` before building any of this: `llama-s
 returns `choices[0].logprobs.content[]` — per generated token, its chosen `logprob` plus
 `top_logprobs` alternates — for an image + text chat completion, including on olmOCR-2.
 
-### 7g. The crop is retained 7 days ✅ built 2026-09-02
+### 7g. Whatever image was sent to the model is retained 7 days ✅ built 2026-09-02
 
 Reverses phase 7's "nothing is written to disk" — the operator asked for 7-day
 retention of hint captures, matching the other tools' job store. Built as narrowly as
 asked, in `app/hint_store.py`:
 
-* **Only the crop actually sent to the model is kept** — not the full capture frame it
-  came from, and not a sample's token/logprob detail (`app/handwriting.token_confidences()`
-  output). What's on disk is the same thing already shown on the page: the image, the
-  member, the mode, and the grouped reading(s) as `text`/`count`/`truncated`.
+* **What's kept is exactly what was sent to the model** — not a sample's
+  token/logprob detail (`app/handwriting.token_confidences()` output). Caught 2026-09-02
+  when the operator asked what happens on a no-crop read: `mode == "page"` means the
+  WHOLE capture was sent, and the first cut of this phase's docs claimed "only the
+  crop, never the full capture" without checking that case. Confirmed with the
+  operator that the whole capture should be retained too when that's what was
+  actually sent, not silently skipped — so this is accurate now, not a narrower
+  promise than the code keeps. What's on disk is the same thing already shown on the
+  page: the image, the member, the mode, and the grouped reading(s) as
+  `text`/`count`/`truncated`.
 * **A separate store, not the job queue's.** `config.HINTS_DIR`
   (`~/.local/state/halo-workbench/hints/<id>/`, directories like `app/jobs.py`'s) and its
   own `config.HINT_RETENTION_DAYS` (7, `WORKBENCH_HINT_RETENTION_DAYS` overridable) —
@@ -986,15 +992,17 @@ recorded as current.
 
 ### Acceptance — measured 2026-08-30, extended 2026-09-02, 2026-09-02 (7g)
 
-`tests/phase7_acceptance.sh` is 58 offline checks and all pass (52 before 7g): the
+`tests/phase7_acceptance.sh` is 61 offline checks and all pass (52 before 7g): the
 refusals, the grouping rules, the silent-answer case reproduced against a fake server,
 the routes, the wiring nothing else validates, `token_confidences()` (7f), and (added
 7g) that exactly one capture lands in `HINTS_DIR` per `/hint/read`, that the bytes on
-disk are the crop that was actually sent, that the retained meta carries no token/logprob
-detail, and that `prune()` removes an entry once its window has passed. The offline run
-now takes a throwaway `WORKBENCH_STATE_DIR` (`mktemp -d`, same as phases 1 and 2), since
-`/hint/read` writes for real now and must not touch the resident service's own store.
-`--live IMAGE` is the measurement against the real units.
+disk are what was actually sent, that a no-crop ("Whole capture instead") read is
+retained too — with the whole frame, tagged `mode: "page"`, not silently skipped — that
+the retained meta carries no token/logprob detail, and that `prune()` removes an entry
+once its window has passed. The offline run now takes a throwaway `WORKBENCH_STATE_DIR`
+(`mktemp -d`, same as phases 1 and 2), since `/hint/read` writes for real now and must
+not touch the resident service's own store. `--live IMAGE` is the measurement against
+the real units.
 
 | criterion | result |
 |---|---|

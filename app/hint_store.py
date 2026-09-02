@@ -3,10 +3,12 @@
 Phase 7 built the hint tool to touch nothing on disk, on the reasoning that a capture
 is a student's script, not the operator's own document. The operator has since asked
 for 7-day retention, matching the other tools' job store -- so this module exists to
-do that, as narrowly as asked: only the CROP actually sent to the model is kept, never
-the full capture frame it came from, and never the samples' token/logprob detail
-(app/handwriting.token_confidences() output) -- just the grouped reading(s), the same
-thing already shown on the page.
+do that, as narrowly as asked: what's kept is exactly what was sent to the model --
+the crop, when the operator drew one, or the WHOLE capture when they pressed "Whole
+capture instead" (`mode == "page"`; confirmed with the operator 2026-09-02, who wants
+the no-crop case retained too, not silently skipped) -- and never the samples'
+token/logprob detail (app/handwriting.token_confidences() output). Just the grouped
+reading(s), the same thing already shown on the page.
 
 Directories, not rows, same as app/jobs.py: `~/.local/state/halo-workbench/hints/<id>/`
 holding the crop and a meta.json. But this is NOT a job -- there is no queue, no

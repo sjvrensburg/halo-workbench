@@ -263,12 +263,14 @@ pass, stop. Fail the job instead.
   retained 7 days** (operator, 2026-09-02, reversing phase 7's "nothing is stored").
   Interactive, not a batch pipeline: it is serialised by its own lock rather than by
   the queue, because a hint that takes twenty minutes is a failed hint while a
-  conversion that does is a normal one. What is kept is narrow on purpose — only the
-  crop actually sent to the model plus its reading(s), in `app/hint_store.py`'s own
+  conversion that does is a normal one. What is kept is whatever image was sent to the
+  model — a crop when the operator drew one, the WHOLE capture when they pressed
+  "Whole capture instead" instead — plus its reading(s), in `app/hint_store.py`'s own
   store with its own 7-day retention (`config.HINTS_DIR`, separate from the job
-  store), never the full capture frame it came from and never a sample's
-  token/logprob detail. Nothing in `app/tools/hint.py` logs a reading to the journal
-  — the capture store is the only place one lands.
+  store). Never a sample's token/logprob detail. The no-crop case is retained on
+  purpose, confirmed with the operator, not a gap: "just the crop" describes what's
+  sent, not a guarantee about size. Nothing in `app/tools/hint.py` logs a reading to
+  the journal — the capture store is the only place one lands.
 - **Jobs are directories, not rows.** `~/.local/state/halo-workbench/jobs/<id>/`.
   Survives a restart, inspectable with `ls` and `cat` when a user reports something
   odd. Do not introduce a database.
@@ -311,8 +313,8 @@ upload, never paste document contents into a commit message, and do not add logg
 that writes document text to the journal.
 
 Hint captures (`config.HINTS_DIR`, under the same excluded state directory) are a
-different kind of sensitive: a student's script, not the operator's own document, and
-the operator asked for narrower retention than the job store gets by default — only
-the crop, never the full capture frame or a sample's token detail. Keep it that way if
-this store's shape ever changes; do not widen what it keeps without the operator
+different kind of sensitive: a student's script, not the operator's own document.
+What's kept is whatever image was actually sent to the model — the crop, or the whole
+capture when the operator chose not to crop — never a sample's token detail. Keep it
+that way if this store's shape ever changes; do not widen what it keeps without the operator
 saying so again.
