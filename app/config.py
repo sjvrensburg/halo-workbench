@@ -127,9 +127,15 @@ HINT_MEMBERS = [
         "unit": "llama-olmocr",
         "approx_gib": 10,
         "primary": True,
-        # It answers directly, so a word needs almost no room. Measured on a 1459x125
-        # crop 2026-08-30: 291 prompt tokens, 19 generated, 0.7 s per sample.
-        "max_tokens": {"crop": 256, "page": 1024},
+        # It answers directly, so a word needs almost no room -- measured on a 1459x125
+        # crop 2026-08-30: 291 prompt tokens, 19 generated, 0.7 s per sample. But the
+        # operator hit the ceiling in real use 2026-09-02 (longer handwritten passages,
+        # not single words), and unlike Muse/Chandra this member does not ruminate, so
+        # a higher ceiling costs generation time, not GPU headroom held. Raised well
+        # inside `llama-olmocr.service`'s `--ctx-size 16384` -- a full page measures
+        # ~4,070 prompt tokens (PLAN.md 7d), leaving over 12,000 tokens of room even at
+        # this ceiling.
+        "max_tokens": {"crop": 1024, "page": 4096},
         "note": "15/15 on symbols and the fastest measured (2.7–18.4 s/page). "
                 "Apache-2.0. Reads a strikethrough without inventing a negation.",
     },
