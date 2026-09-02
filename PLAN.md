@@ -952,12 +952,48 @@ Feasibility confirmed live against `:8097` before building any of this: `llama-s
 returns `choices[0].logprobs.content[]` — per generated token, its chosen `logprob` plus
 `top_logprobs` alternates — for an image + text chat completion, including on olmOCR-2.
 
-### Acceptance — measured 2026-08-30, extended 2026-09-02
+### 7g. The crop is retained 7 days ✅ built 2026-09-02
 
-`tests/phase7_acceptance.sh` is 52 offline checks and all pass (49 before 7f): the
+Reverses phase 7's "nothing is written to disk" — the operator asked for 7-day
+retention of hint captures, matching the other tools' job store. Built as narrowly as
+asked, in `app/hint_store.py`:
+
+* **Only the crop actually sent to the model is kept** — not the full capture frame it
+  came from, and not a sample's token/logprob detail (`app/handwriting.token_confidences()`
+  output). What's on disk is the same thing already shown on the page: the image, the
+  member, the mode, and the grouped reading(s) as `text`/`count`/`truncated`.
+* **A separate store, not the job queue's.** `config.HINTS_DIR`
+  (`~/.local/state/halo-workbench/hints/<id>/`, directories like `app/jobs.py`'s) and its
+  own `config.HINT_RETENTION_DAYS` (7, `WORKBENCH_HINT_RETENTION_DAYS` overridable) —
+  deliberately not `JOBS_DIR`/`JOB_RETENTION_DAYS`, because hint has no lifecycle to fit
+  into that store's queued/running/done states, and because a student's script is a
+  different kind of sensitive from the operator's own upload; the two retention windows
+  should not be coupled by accident if either is ever tuned differently.
+* **No queue, no worker thread.** `save()` is called once, at the end of a `/hint/read`
+  response that has already been decided — this is not a job, only something to write
+  and later prune. Pruning runs on its own hourly thread (`hint_store.start()`/`stop()`,
+  wired into the lifespan next to `jobs.py`'s and `model_lease.py`'s), on the same
+  reasoning as the job pruner: pruning only at startup would leave a service that stays
+  up for weeks never noticing anything crossed the window.
+* **A save failure never costs the reading.** `app/tools/hint.py` wraps the call in
+  `except OSError` and only logs — the operator looking at the ink right now matters
+  more than whether this particular capture made it to the 7-day store.
+
+CLAUDE.md's "nothing it sees is stored" load-bearing decision, and the matching claims
+in `app/tools/hint.py`'s and `app/handwriting.py`'s docstrings, are updated to match —
+this repo's convention is that the docs stay true, not that a superseded decision stays
+recorded as current.
+
+### Acceptance — measured 2026-08-30, extended 2026-09-02, 2026-09-02 (7g)
+
+`tests/phase7_acceptance.sh` is 58 offline checks and all pass (52 before 7g): the
 refusals, the grouping rules, the silent-answer case reproduced against a fake server,
-the routes, the wiring nothing else validates, and (added 7f) `token_confidences()` on
-absent input, a plain ASCII token, and a character split across two tokens' bytes.
+the routes, the wiring nothing else validates, `token_confidences()` (7f), and (added
+7g) that exactly one capture lands in `HINTS_DIR` per `/hint/read`, that the bytes on
+disk are the crop that was actually sent, that the retained meta carries no token/logprob
+detail, and that `prune()` removes an entry once its window has passed. The offline run
+now takes a throwaway `WORKBENCH_STATE_DIR` (`mktemp -d`, same as phases 1 and 2), since
+`/hint/read` writes for real now and must not touch the resident service's own store.
 `--live IMAGE` is the measurement against the real units.
 
 | criterion | result |

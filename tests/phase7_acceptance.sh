@@ -22,6 +22,13 @@ cd "$(dirname "$0")/.."
 VENV="${VENV:-$HOME/venvs/workbench}"
 [ -x "$VENV/bin/python" ] || { echo "no venv at $VENV -- run scripts/bootstrap.sh" >&2; exit 2; }
 
+# 7g: /hint/read now writes the crop it was sent into config.HINTS_DIR, same as
+# phases 1 and 2's throwaway state dirs -- otherwise this "offline" run would leave
+# real files in the resident service's own 7-day store.
+WORKBENCH_STATE_DIR="$(mktemp -d /tmp/workbench-phase7-XXXXXX)"
+export WORKBENCH_STATE_DIR
+trap 'rm -rf "$WORKBENCH_STATE_DIR"' EXIT
+
 echo ">> the readings, the refusals, the routes (no model)"
 "$VENV/bin/python" tests/phase7_driver.py offline
 

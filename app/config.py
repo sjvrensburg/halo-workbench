@@ -28,6 +28,18 @@ JOBS_DIR = STATE_DIR / "jobs"
 # answer (PLAN.md "Open questions"); it is short on purpose -- this is not storage.
 JOB_RETENTION_DAYS = 7
 
+# ── The hint tool's capture store (7g, operator 2026-09-02) ──────────────────
+# REVERSES phase 7's "nothing is written to disk": the operator asked for 7-day
+# retention of hint captures, matching the other tools' job store. Deliberately a
+# SEPARATE directory and a SEPARATE retention knob, not JOBS_DIR/JOB_RETENTION_DAYS,
+# because hint has none of a job's lifecycle (no queued/running/done, no worker) and
+# because these are a STUDENT's script, not the operator's own document -- if the two
+# retention periods are ever tuned differently, they should not be coupled by
+# accident. Only the crop actually sent to the model is kept, not the full capture
+# frame it came from -- see app/hint_store.py.
+HINTS_DIR = STATE_DIR / "hints"
+HINT_RETENTION_DAYS = int(os.environ.get("WORKBENCH_HINT_RETENTION_DAYS", 7))
+
 # ── The marker wrapper ───────────────────────────────────────────────────────
 # Lives in the sibling repo and is called as a subprocess, never imported and never
 # bypassed for a bare `marker_single`. Its header comment explains why in detail:

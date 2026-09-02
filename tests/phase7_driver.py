@@ -24,6 +24,7 @@ import os
 import sys
 import threading
 import time
+from datetime import datetime, timedelta, timezone
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 from urllib.parse import urlsplit
@@ -41,7 +42,7 @@ FAKE_PORT = int(os.environ.get("WORKBENCH_FAKE_PORT", 8399))
 if sys.argv[1:2] != ["live"]:
     os.environ.setdefault("WORKBENCH_OLMOCR_ENDPOINT", f"http://127.0.0.1:{FAKE_PORT}")
 
-from app import config, handwriting  # noqa: E402
+from app import config, handwriting, hint_store  # noqa: E402
 
 MEMBERS_BY_ID = {member["id"]: member for member in config.HINT_MEMBERS}
 
@@ -271,6 +272,7 @@ def offline() -> int:
         Fake.script = [{"content": "the cat"}, {"content": "the cot"}, {"content": "the cat"}]
         Fake.seen = []
         before = set(config.JOBS_DIR.glob("*")) if config.JOBS_DIR.exists() else set()
+        before_hints = set(config.HINTS_DIR.glob("*")) if config.HINTS_DIR.exists() else set()
         answer = client.post("/hint/read", json={
             "member": "olmocr", "image": data_url(images["jpeg"], "image/jpeg"),
             "samples": 3, "capture_px": {"width": 640, "height": 480}}).json()
@@ -283,7 +285,28 @@ def offline() -> int:
               answer["crop_px"] == {"width": 300, "height": 200})
         after = set(config.JOBS_DIR.glob("*")) if config.JOBS_DIR.exists() else set()
         check("nothing reached the job store", before == after,
-              "captures are ephemeral: no job directory, no retention window")
+              "the crop is retained (7g), but through its own store, never the job queue's")
+
+        print("\n>> the 7-day capture store (7g)")
+        new_entries = (set(config.HINTS_DIR.glob("*")) if config.HINTS_DIR.exists() else set()) - before_hints
+        check("exactly one capture was saved", len(new_entries) == 1)
+        entry = next(iter(new_entries))
+        check("the crop actually sent is what's on disk",
+              (entry / "crop.jpeg").read_bytes() == images["jpeg"])
+        meta = json.loads((entry / "meta.json").read_text())
+        check("the meta records the member, mode and readings",
+              meta["member"] == "olmocr" and meta["mode"] == "crop"
+              and [r["text"] for r in meta["readings"]] == ["the cat", "the cot"])
+        check("token/logprob detail did not follow the reading onto disk",
+              all("tokens" not in r and "alternates" not in r for r in meta["readings"]))
+
+        # prune(now=...) takes `now`, not a cutoff: it subtracts the retention window
+        # itself, so `now` must be further out than that window for a just-created
+        # entry to have aged past it.
+        far_future = datetime.now(timezone.utc) + timedelta(days=config.HINT_RETENTION_DAYS + 1)
+        removed = hint_store.prune(now=far_future)
+        check("prune() removes a capture whose window has passed", removed >= 1)
+        check("...and it is actually gone", not entry.exists())
 
         Fake.script = [{"content": "the cat"}]
         Fake.seen = []

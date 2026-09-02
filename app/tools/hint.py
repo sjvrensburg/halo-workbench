@@ -19,9 +19,12 @@ Three ways this differs from the other four tools, each deliberate:
   reload; a hint that takes 20 minutes is a failed hint. Requests here are interactive and
   serialised among themselves by `_GPU` — one lock, because the GPU is one GPU. A hint can
   still queue behind a marker job; the page says so instead of pretending otherwise.
-* **Nothing is written to disk.** Captures are student scripts and carry names. The image
-  lives in this process for the life of the request and in the browser tab until it is
-  closed. No job directory, no 7-day retention, and nothing here logs a reading.
+* **The crop is retained 7 days (7g, operator 2026-09-02) — reversing phase 7's "nothing
+  is written to disk".** Captures are student scripts and carry names, so only the crop
+  actually sent to the model is kept, in its own store with its own retention knob, never
+  the full capture frame it came from and never a sample's token/logprob detail — see
+  `app/hint_store.py`. Still no job directory: this store has no queue and no worker,
+  because there is no lifecycle here to track, only something to write once and prune.
 * **Members are asked one at a time, by the operator.** olmOCR-2 answers first because it
   is fast and free of the others' failure modes; a second voice is a second press, which
   is also what keeps ~30 GiB of models off a box with no swap (PLAN.md 7e).
@@ -35,7 +38,7 @@ import threading
 from fastapi import APIRouter, Body, Request
 from fastapi.responses import HTMLResponse, JSONResponse
 
-from app import config, handwriting, model_lease
+from app import config, handwriting, hint_store, model_lease
 from app.views import templates
 
 log = logging.getLogger(__name__)
@@ -175,6 +178,15 @@ def read(payload: dict = Body(...)):
     log.info("hint: %s x%d, %s, %d bytes, %.1fs",
              member["id"], samples, mode, len(raw),
              sum(sample["elapsed"] for sample in results))
+
+    try:
+        # Kept even when every sample was silent: an unreadable crop is still a real
+        # attempt, same as a failed job stays in the job store. A store failure must
+        # never cost the operator the reading they're looking at right now.
+        hint_store.save(member=member["id"], mode=mode, mime=mime, image=raw,
+                        readings=readings, capture_px=capture or None)
+    except OSError:
+        log.exception("hint: failed to save the capture to the 7-day store")
 
     return JSONResponse({
         "member": member["id"],

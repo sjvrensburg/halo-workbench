@@ -122,11 +122,16 @@ curl -s localhost:8092/props                             # tune prompts against 
   ordering comment is load-bearing; two shipped-and-caught bugs are recorded in it.
 - `app/tools/translate.py` — both modes. Same language on both sides means rewrite, and
   that routes to a different model, not just a different prompt.
-- `app/handwriting.py`, `app/tools/hint.py` — the fifth tool, and the one that is not a
-  job: interactive, ephemeral, nothing on disk. `handwriting.py` is the pure half — one
-  request to a VLM, and `group()`/`agreement()`, which count readings and never merge,
-  average or rank them. An empty `content` with the tokens spent in `reasoning_content`
-  is a *reported result*, not a non-answer; halo-prep measured exactly that on Chandra.
+- `app/handwriting.py`, `app/tools/hint.py`, `app/hint_store.py` — the fifth tool, and
+  the one that is not a job: interactive, not a batch pipeline, and the crop it sends
+  is retained 7 days (7g) through its own store, never the job queue's.
+  `handwriting.py` stays the pure half — no disk, no store — with one request to a
+  VLM, `token_confidences()` for the per-token hesitation view, and
+  `group()`/`agreement()`, which count readings and never merge, average or rank
+  them. An empty `content` with the tokens spent in `reasoning_content` is a
+  *reported result*, not a non-answer; halo-prep measured exactly that on Chandra.
+  `hint_store.py` is the disk-touching half: directories like `app/jobs.py`'s, but no
+  queue and no worker, because there is no lifecycle here to track.
 - `app/model_lease.py` — starts a `MANAGED_UNITS` unit on demand and stops it after
   `MODEL_IDLE_SECONDS` (or `MODEL_IDLE_OVERRIDES`, which is shorter for the ~20 GiB hint
   members). It refuses a cold start whose model does not fit in `MemAvailable`: no swap
@@ -254,12 +259,16 @@ pass, stop. Fail the job instead.
   `pdftotext` output, then an LLM's own transcription — was written into marker's
   output path and went undetected. That script exists because prose in a skill file is
   advisory and an exit code is not. The same applies to code here.
-- **The hint tool is the one thing here that is not a job, and nothing it sees is
-  stored.** Interactive, ephemeral, no artefact: a capture is a student's script and
-  carries a name, so it lives in the browser tab and — for the length of one request — in
-  this process, and never in `~/.local/state`. It is serialised by its own lock rather
-  than by the queue, because a hint that takes twenty minutes is a failed hint while a
-  conversion that does is a normal one. Nothing in `app/tools/hint.py` logs a reading.
+- **The hint tool is the one thing here that is not a job, and the crop it sends is
+  retained 7 days** (operator, 2026-09-02, reversing phase 7's "nothing is stored").
+  Interactive, not a batch pipeline: it is serialised by its own lock rather than by
+  the queue, because a hint that takes twenty minutes is a failed hint while a
+  conversion that does is a normal one. What is kept is narrow on purpose — only the
+  crop actually sent to the model plus its reading(s), in `app/hint_store.py`'s own
+  store with its own 7-day retention (`config.HINTS_DIR`, separate from the job
+  store), never the full capture frame it came from and never a sample's
+  token/logprob detail. Nothing in `app/tools/hint.py` logs a reading to the journal
+  — the capture store is the only place one lands.
 - **Jobs are directories, not rows.** `~/.local/state/halo-workbench/jobs/<id>/`.
   Survives a restart, inspectable with `ls` and `cat` when a user reports something
   odd. Do not introduce a database.
@@ -300,3 +309,10 @@ Uploaded PDFs are the user's real documents — invoices, papers, correspondence
 `.gitignore` excludes the job state directory and any stray PDF. Never commit an
 upload, never paste document contents into a commit message, and do not add logging
 that writes document text to the journal.
+
+Hint captures (`config.HINTS_DIR`, under the same excluded state directory) are a
+different kind of sensitive: a student's script, not the operator's own document, and
+the operator asked for narrower retention than the job store gets by default — only
+the crop, never the full capture frame or a sample's token detail. Keep it that way if
+this store's shape ever changes; do not widen what it keeps without the operator
+saying so again.

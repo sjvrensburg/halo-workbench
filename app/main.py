@@ -12,7 +12,7 @@ from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 
-from app import config, jobs, model_lease
+from app import config, hint_store, jobs, model_lease
 from app.tools import hint, marker, redact, regex, translate
 from app.views import templates
 
@@ -40,11 +40,16 @@ async def lifespan(_: FastAPI):
     # Owns nothing yet: it only ever stops a unit a job here started (app/model_lease.py).
     model_lease.start()
 
+    # 7g: hint captures are retained 7 days now, in their own store -- see
+    # app/hint_store.py for why this is not just another jobs.py.
+    hint_store.start()
+
     try:
         yield
     finally:
         jobs.stop()
         model_lease.stop()
+        hint_store.stop()
 
 
 app = FastAPI(title="halo-workbench", docs_url=None, redoc_url=None, lifespan=lifespan)
