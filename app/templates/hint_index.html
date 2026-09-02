@@ -762,15 +762,19 @@ function el(tag, className, text) {
 // Two views of the same text, never composited: KaTeX's auto-render matches `$...$`
 // etc. against a whole TEXT NODE, so wrapping every token in its own <span> first (for
 // the hesitation tints) would stop it from ever seeing a complete delimiter pair. A
-// reading with token data starts in the hesitation view and can be switched to the
-// clean, KaTeX-rendered view -- useful when the tinting fragments a formula into
-// something harder to read than the raw text would have been.
+// reading with token data starts in the hesitation view UNLESS it looks like it holds a
+// LaTeX formula, in which case it starts in the clean, KaTeX-rendered view instead --
+// found 2026-09-02: with hesitation the default everywhere, math sat there as literal
+// `$...$` text because nobody thought to tap "Show clean text" first. Either view is one
+// tap away regardless; this just picks the more useful starting one per reading.
+const MATH_DELIMITERS = /\$\$?[^$]+\$\$?|\\\([\s\S]+?\\\)|\\\[[\s\S]+?\\\]/;
+
 function renderReadingText(container, reading) {
   container.innerHTML = "";
   const hasTokens = Array.isArray(reading.tokens) && reading.tokens.length > 0;
   const textEl = document.createElement("span");
   container.appendChild(textEl);
-  let showingHesitation = hasTokens;
+  let showingHesitation = hasTokens && !MATH_DELIMITERS.test(reading.text);
 
   function paintClean() {
     textEl.className = "mono";
@@ -812,7 +816,7 @@ function renderReadingText(container, reading) {
   if (hasTokens) {
     const toggle = document.createElement("button");
     toggle.type = "button"; toggle.className = "secondary toggle-view";
-    toggle.textContent = "Show clean text";
+    toggle.textContent = showingHesitation ? "Show clean text" : "Show hesitation";
     toggle.addEventListener("click", () => {
       showingHesitation = !showingHesitation;
       (showingHesitation ? paintHesitation : paintClean)();
