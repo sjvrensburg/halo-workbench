@@ -82,10 +82,13 @@ class Fake(BaseHTTPRequestHandler):
         body = json.loads(self.rfile.read(int(self.headers["content-length"])))
         Fake.seen.append(body)
         reply = Fake.script[min(len(Fake.seen) - 1, len(Fake.script) - 1)]
+        choice = {"message": {"content": reply.get("content", ""),
+                              "reasoning_content": reply.get("reasoning", "")},
+                  "finish_reason": reply.get("finish_reason", "stop")}
+        if "logprobs" in reply:
+            choice["logprobs"] = {"content": reply["logprobs"]}
         payload = json.dumps({
-            "choices": [{"message": {"content": reply.get("content", ""),
-                                     "reasoning_content": reply.get("reasoning", "")},
-                         "finish_reason": reply.get("finish_reason", "stop")}],
+            "choices": [choice],
             "usage": {"prompt_tokens": 4081, "completion_tokens": 12,
                       "prompt_tokens_details": {"cached_tokens": 4080}},
         }).encode()
@@ -195,6 +198,26 @@ def offline() -> int:
         ])
         check("a character split across two tokens' bytes still decodes correctly",
               split_char == [{"text": "é!", "prob": split_char[0]["prob"], "alternates": []}])
+
+        def _tok(text, logprob=-0.01):
+            return {"bytes": list(text.encode()), "logprob": logprob, "top_logprobs": []}
+
+        Fake.script = [{"content": "fit",
+                        "logprobs": [_tok("fit")]}]
+        Fake.seen = []
+        aligned = handwriting.read_once(endpoint, images["jpeg"], "image/jpeg")
+        check("tokens that DO reconstruct the reading are kept",
+              aligned["tokens"] is not None and aligned["tokens"][0]["text"] == "fit")
+
+        # Measured on Muse Glimmer 2026-09-02: logprobs.content covered the model's
+        # WHOLE generation (reasoning, channel markers, even an echo of the prompt),
+        # not just `content`. Reproduced here without a live reasoning model.
+        Fake.script = [{"content": "the answer is x = 5",
+                        "logprobs": [_tok("<|message|>"), _tok("This is a crop")]}]
+        Fake.seen = []
+        misaligned = handwriting.read_once(endpoint, images["jpeg"], "image/jpeg")
+        check("tokens that do NOT reconstruct the reading are dropped, not shown wrong",
+              misaligned["text"] == "the answer is x = 5" and misaligned["tokens"] is None)
 
         print("\n>> the spread, and what it must not do to it")
         samples = [{"text": "the cat", "silent": False},

@@ -190,6 +190,14 @@ def read_once(endpoint: str, raw: bytes, mime: str, mode: str = "crop",
     reasoning = (message.get("reasoning_content") or "")
     usage = payload.get("usage") or {}
     logprobs = choice.get("logprobs")
+    tokens = token_confidences(logprobs.get("content") if logprobs else None)
+    if tokens is not None and "".join(span["text"] for span in tokens).strip() != text:
+        # Measured on Muse Glimmer, 2026-09-02: a reasoning model's `logprobs.content`
+        # covers its WHOLE generation -- channel markers, the reasoning itself, even an
+        # echo of the prompt -- not just the parsed `content` this reading shows. Tokens
+        # that don't reconstruct to the displayed text would tint and caption the WRONG
+        # text as if it were the reading, which is worse than the feature being absent.
+        tokens = None
     return {
         "text": text,
         # The Chandra failure, made loud. See this module's docstring.
@@ -199,9 +207,10 @@ def read_once(endpoint: str, raw: bytes, mime: str, mode: str = "crop",
         "truncated": choice.get("finish_reason") == "length",
         "prompt_tokens": usage.get("prompt_tokens"),
         "completion_tokens": usage.get("completion_tokens"),
-        # None when the endpoint didn't return logprobs -- the page falls back to
-        # plain text for that reading rather than treating it as an error.
-        "tokens": token_confidences(logprobs.get("content") if logprobs else None),
+        # None when the endpoint didn't return logprobs, or when they don't line up
+        # with `text` (see above) -- the page falls back to plain text for that
+        # reading rather than showing something misleading.
+        "tokens": tokens,
         # Repeat samples of one crop reuse the prefill almost completely (measured on
         # :8097, 4080 of 4081 cached). Surfaced so a slow second sample is explicable.
         "cached_tokens": usage.get("prompt_tokens_details", {}).get("cached_tokens")

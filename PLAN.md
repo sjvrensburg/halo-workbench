@@ -952,6 +952,16 @@ Feasibility confirmed live against `:8097` before building any of this: `llama-s
 returns `choices[0].logprobs.content[]` — per generated token, its chosen `logprob` plus
 `top_logprobs` alternates — for an image + text chat completion, including on olmOCR-2.
 
+**Caught measuring against Muse Glimmer 30B, 2026-09-02, before it ever reached a
+screen:** a reasoning member's `logprobs.content` covers its WHOLE generation — channel
+markers, the reasoning itself, even an echo of the prompt — not just the parsed
+`content` a reading shows. `read_once()` now reconstructs the token spans' text and
+compares it against `content`; if they don't match, `tokens` comes back `None` instead
+of the wrong text being tinted and captioned as if it were the reading. Showing the
+right thing with no hesitation view beats showing the wrong thing with one. Reproduced
+offline (`tests/phase7_driver.py`, `Fake` extended to carry a `logprobs` field) without
+needing a live reasoning model for the regression to be caught again.
+
 ### 7g. Whatever image was sent to the model is retained 7 days ✅ built 2026-09-02
 
 Reverses phase 7's "nothing is written to disk" — the operator asked for 7-day
@@ -990,19 +1000,21 @@ in `app/tools/hint.py`'s and `app/handwriting.py`'s docstrings, are updated to m
 this repo's convention is that the docs stay true, not that a superseded decision stays
 recorded as current.
 
-### Acceptance — measured 2026-08-30, extended 2026-09-02, 2026-09-02 (7g)
+### Acceptance — measured 2026-08-30, extended 2026-09-02
 
-`tests/phase7_acceptance.sh` is 61 offline checks and all pass (52 before 7g): the
-refusals, the grouping rules, the silent-answer case reproduced against a fake server,
-the routes, the wiring nothing else validates, `token_confidences()` (7f), and (added
-7g) that exactly one capture lands in `HINTS_DIR` per `/hint/read`, that the bytes on
-disk are what was actually sent, that a no-crop ("Whole capture instead") read is
-retained too — with the whole frame, tagged `mode: "page"`, not silently skipped — that
-the retained meta carries no token/logprob detail, and that `prune()` removes an entry
-once its window has passed. The offline run now takes a throwaway `WORKBENCH_STATE_DIR`
-(`mktemp -d`, same as phases 1 and 2), since `/hint/read` writes for real now and must
-not touch the resident service's own store. `--live IMAGE` is the measurement against
-the real units.
+`tests/phase7_acceptance.sh` is 63 offline checks and all pass (52 before 7g, 61 before
+the Muse fix): the refusals, the grouping rules, the silent-answer case reproduced
+against a fake server, the routes, the wiring nothing else validates, `token_confidences()`
+(7f), that a reading's tokens are kept when they reconstruct the displayed text and
+dropped when they don't (the Muse case, reproduced with `Fake` carrying a fabricated
+`logprobs` field), and (7g) that exactly one capture lands in `HINTS_DIR` per
+`/hint/read`, that the bytes on disk are what was actually sent, that a no-crop
+("Whole capture instead") read is retained too — with the whole frame, tagged
+`mode: "page"`, not silently skipped — that the retained meta carries no token/logprob
+detail, and that `prune()` removes an entry once its window has passed. The offline run
+now takes a throwaway `WORKBENCH_STATE_DIR` (`mktemp -d`, same as phases 1 and 2), since
+`/hint/read` writes for real now and must not touch the resident service's own store.
+`--live IMAGE` is the measurement against the real units.
 
 | criterion | result |
 |---|---|
