@@ -6,9 +6,11 @@ are PLAN.md phases 2, 4 and 5; each registers a handler with `app.jobs`.
 
 import logging
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse
+from fastapi.staticfiles import StaticFiles
 
 from app import config, jobs, model_lease
 from app.tools import hint, marker, redact, regex, translate
@@ -57,6 +59,12 @@ app.include_router(translate.router)
 # `tailscale serve` registration per tool, living outside this repo and invisible to
 # grep (CLAUDE.md "One port"). It also keeps :8097 and friends on loopback.
 app.include_router(hint.router)
+
+# Vendored assets only (currently: KaTeX for the hint page's math rendering, see
+# app/static/katex/VERSION). Not a build output and not user content -- no reason
+# for this to be anything but a plain directory mount.
+app.mount("/static", StaticFiles(directory=str(Path(__file__).parent / "static")),
+          name="static")
 
 
 @app.get("/healthz")

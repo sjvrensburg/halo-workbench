@@ -24,7 +24,9 @@ Three things in this file are load-bearing and none of them is obvious:
 from __future__ import annotations
 
 import base64
+import codecs
 import json
+import math
 import re
 import time
 import urllib.error
@@ -150,6 +152,10 @@ def read_once(endpoint: str, raw: bytes, mime: str, mode: str = "crop",
         "model": "local",
         "temperature": temperature,
         "max_tokens": max_tokens or MAX_TOKENS[mode],
+        # Per-token hesitation for the page's default reading view (7f). Harmless to
+        # request against an endpoint that ignores it -- parsing below is all `.get`.
+        "logprobs": True,
+        "top_logprobs": 3,
         "messages": [{"role": "user", "content": [
             {"type": "image_url", "image_url": {
                 "url": f"data:{mime};base64," + base64.b64encode(raw).decode()}},
@@ -183,6 +189,7 @@ def read_once(endpoint: str, raw: bytes, mime: str, mode: str = "crop",
     text = (message.get("content") or "").strip()
     reasoning = (message.get("reasoning_content") or "")
     usage = payload.get("usage") or {}
+    logprobs = choice.get("logprobs")
     return {
         "text": text,
         # The Chandra failure, made loud. See this module's docstring.
@@ -192,6 +199,9 @@ def read_once(endpoint: str, raw: bytes, mime: str, mode: str = "crop",
         "truncated": choice.get("finish_reason") == "length",
         "prompt_tokens": usage.get("prompt_tokens"),
         "completion_tokens": usage.get("completion_tokens"),
+        # None when the endpoint didn't return logprobs -- the page falls back to
+        # plain text for that reading rather than treating it as an error.
+        "tokens": token_confidences(logprobs.get("content") if logprobs else None),
         # Repeat samples of one crop reuse the prefill almost completely (measured on
         # :8097, 4080 of 4081 cached). Surfaced so a slow second sample is explicable.
         "cached_tokens": usage.get("prompt_tokens_details", {}).get("cached_tokens")
@@ -200,6 +210,52 @@ def read_once(endpoint: str, raw: bytes, mime: str, mode: str = "crop",
         "temperature": temperature,
         "max_tokens": max_tokens or MAX_TOKENS[mode],
     }
+
+
+def token_confidences(logprobs_content: list[dict] | None) -> list[dict] | None:
+    """[{text, prob, alternates}, ...] for one generation, or None if there is none.
+
+    This is a different thing from `group()`/`agreement()` below and does not touch
+    PLAN.md 7d's "not a verifier" rule: 7d is about collapsing the SPREAD across
+    samples and members into one voted answer, which this never does. This is a
+    single generation's own hesitation, read off `logprob` and shown as-is -- the
+    page's default view for a reading, the same way showing disagreement already is.
+
+    `bytes`, not the `token` string field: llama-server's `token` can be a lossy
+    decode of one BPE token that only holds *part* of a multi-byte UTF-8 character,
+    and this tool has no reason to assume ASCII. An incremental decoder reassembles
+    the character across however many tokens it actually took, so text still comes
+    out right even when a character's bytes are split; a token that only contributed
+    partial bytes correctly produces no span of its own, and its logprob is folded
+    into whichever later token completes the character.
+
+    `alternates` (from the request's `top_logprobs`) are decoded independently and
+    best-effort (`errors="replace"`) rather than through the same incremental
+    decoder: they are runner-up single tokens the model did NOT choose, not a
+    continuation of the output stream, so there is nothing to reassemble them
+    against. They are for a tap-to-reveal detail, never the displayed text.
+    """
+    if not logprobs_content:
+        return None
+    decoder = codecs.getincrementaldecoder("utf-8")()
+    spans: list[dict] = []
+    try:
+        for item in logprobs_content:
+            text = decoder.decode(bytes(item.get("bytes") or []))
+            if text:
+                alternates = [
+                    {"text": bytes(alt.get("bytes") or []).decode("utf-8", "replace"),
+                     "prob": math.exp(alt["logprob"])}
+                    for alt in (item.get("top_logprobs") or [])
+                ]
+                spans.append({"text": text, "prob": math.exp(item["logprob"]),
+                             "alternates": alternates})
+        tail = decoder.decode(b"", final=True)
+    except (UnicodeDecodeError, TypeError, KeyError, ValueError):
+        return None
+    if tail and spans:
+        spans[-1]["text"] += tail
+    return spans or None
 
 
 # ── the spread ───────────────────────────────────────────────────────────────

@@ -906,11 +906,59 @@ the operator asks for more candidates**, and release on idle rather than at end 
 session. Chandra has no unit yet — it would need one, or a lease helper that starts a
 bare `llama-server`; do not add a resident unit for it.
 
-### Acceptance — measured 2026-08-30
+### 7f. Guided steps, live status, LaTeX, and per-token hesitation ✅ built 2026-09-02
 
-`tests/phase7_acceptance.sh` is 45 offline checks and all pass: the refusals, the grouping
-rules, the silent-answer case reproduced against a fake server, the routes, and the wiring
-nothing else validates. `--live IMAGE` is the measurement against the real units.
+Four usability problems from real use, all in `app/templates/hint_index.html` plus small
+additions to `app/handwriting.py` and `app/tools/hint.py`:
+
+* **Everything was visible at once.** The camera viewer stayed open behind the crop
+  canvas, which stayed open behind the results, so "capture → crop → read" read as one
+  undifferentiated screen. Added a small step indicator (**1 Capture · 2 Crop · 3 Read**)
+  and collapse each step to a compact summary once the operator moves past it — a pill
+  or a "Retake"/"Edit crop" affordance re-expands it. Not a locked wizard: nothing stops
+  the operator going back.
+* **No sense of progress, and errors lingered.** Pressing a model's button always
+  appended a new card; asking the same member again after an error left the stale error
+  next to a fresh "asking…" card, and it was not obvious which was current. Each member
+  now owns exactly one card (`#result-<id>`), replaced in place on every ask, with a
+  small spinner instead of bare text. Retrying the primary no longer wipes every other
+  member's already-fetched answer — only its own card resets. A related fix in the same
+  spirit: redrawing the crop box now clears stale results for the crop being replaced,
+  which it did not before.
+* **No LaTeX rendering**, though olmOCR-2 was fine-tuned specifically on handwritten
+  math (`app/config.py` HINT_MEMBERS) and its transcription of a formula is often
+  literal LaTeX source. KaTeX v0.18.5 is vendored into `app/static/katex/` (trimmed to
+  `katex.min.{js,css}`, `contrib/auto-render.min.js` and woff2-only fonts, ~600 KB —
+  small enough to commit directly, unlike the ONNX model `fetch-privacy-filter.sh`
+  fetches; provenance and sha256 in `app/static/katex/VERSION`). `renderMathInElement`
+  runs on a reading's `textContent` after it is set, never on raw HTML, so `<del>` and
+  other literal markup are unaffected.
+* **No per-token uncertainty signal.** `read_once()` now requests `logprobs`/
+  `top_logprobs` and `app/handwriting.token_confidences()` turns them into
+  `{text, prob, alternates}` spans, reassembled through an incremental UTF-8 decoder so
+  a character split across two BPE tokens still comes out right. `app/tools/hint.py`
+  attaches them to the matching grouped reading. **This is not the "confidence score"
+  PLAN.md 7d warns against** — 7d is about collapsing the spread ACROSS samples and
+  members into one voted answer, which nothing here does; this is one generation's own
+  hesitation, shown as-is. It is the page's **default** view for a reading with token
+  data (background tint only, three tiers, a second non-color channel via underline
+  style so the tiers read without color at all), with a toggle to the clean
+  KaTeX-rendered view for when the tinting fragments a formula. Tapping a token shows
+  its exact probability and runner-up candidates. Tier thresholds (0.92 / 0.6) are a
+  first guess, not a measurement — recalibrate once this has run against real
+  ambiguous ink.
+
+Feasibility confirmed live against `:8097` before building any of this: `llama-server`
+returns `choices[0].logprobs.content[]` — per generated token, its chosen `logprob` plus
+`top_logprobs` alternates — for an image + text chat completion, including on olmOCR-2.
+
+### Acceptance — measured 2026-08-30, extended 2026-09-02
+
+`tests/phase7_acceptance.sh` is 52 offline checks and all pass (49 before 7f): the
+refusals, the grouping rules, the silent-answer case reproduced against a fake server,
+the routes, the wiring nothing else validates, and (added 7f) `token_confidences()` on
+absent input, a plain ASCII token, and a character split across two tokens' bytes.
+`--live IMAGE` is the measurement against the real units.
 
 | criterion | result |
 |---|---|

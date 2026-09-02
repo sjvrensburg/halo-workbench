@@ -172,6 +172,29 @@ def offline() -> int:
         cut = handwriting.read_once(endpoint, images["jpeg"], "image/jpeg")
         check("hitting the token ceiling is flagged", cut["truncated"])
 
+        print("\n>> per-token hesitation (7f) -- a different thing from the spread")
+        check("no logprobs is None, not an empty list",
+              handwriting.token_confidences(None) is None
+              and handwriting.token_confidences([]) is None)
+
+        ascii_tokens = handwriting.token_confidences([
+            {"bytes": [102, 105, 116], "logprob": -0.0001,
+             "top_logprobs": [{"bytes": [102, 105, 116], "logprob": -0.0001},
+                              {"bytes": [70, 105, 116], "logprob": -9.9}]},
+        ])
+        check("a plain ASCII token round-trips with its probability and alternates",
+              ascii_tokens[0]["text"] == "fit" and ascii_tokens[0]["prob"] > 0.999
+              and ascii_tokens[0]["alternates"][1]["text"] == "Fit")
+
+        # A UTF-8 character split across two BPE tokens' bytes ("é" = 0xC3 0xA9) --
+        # the incremental decoder must reassemble it rather than raise or misalign.
+        split_char = handwriting.token_confidences([
+            {"bytes": [0xC3], "logprob": -1.0, "top_logprobs": []},
+            {"bytes": [0xA9, ord("!")], "logprob": -0.2, "top_logprobs": []},
+        ])
+        check("a character split across two tokens' bytes still decodes correctly",
+              split_char == [{"text": "é!", "prob": split_char[0]["prob"], "alternates": []}])
+
         print("\n>> the spread, and what it must not do to it")
         samples = [{"text": "the cat", "silent": False},
                    {"text": "The  cat", "silent": False},

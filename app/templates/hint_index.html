@@ -41,7 +41,63 @@
     claim. */
  #cropview{max-height:9rem;max-width:100%;border:1px solid var(--line);border-radius:8px;
    background:var(--surface);display:block}
+
+ /* Progress across the three steps. Not a locked wizard -- every pill re-expands its
+    step, so a capture or crop can still be revised -- just a fixed place to answer
+    "where am I", which nothing on the page said before: all three stages used to sit
+    open at once. */
+ .steps{display:flex;gap:.5rem;margin:.9rem 0;flex-wrap:wrap}
+ .steps button{min-height:auto;padding:.35rem .8rem .35rem .5rem;border-radius:999px;
+   border:1px solid var(--line);background:var(--surface);color:var(--muted);
+   font-size:.85rem;font-weight:600}
+ .steps button .n{display:inline-flex;align-items:center;justify-content:center;
+   width:1.35rem;height:1.35rem;border-radius:50%;margin-right:.4rem;font-size:.72rem;
+   background:color-mix(in oklab,var(--ink) 10%,transparent)}
+ .steps button[data-state=current]{color:var(--ink);border-color:var(--accent);
+   background:color-mix(in oklab,var(--accent) 12%,transparent)}
+ .steps button[data-state=current] .n{background:var(--accent);color:var(--accent-ink)}
+ .steps button[data-state=done] .n{background:var(--ok);color:#fff}
+ .steps button[data-state=pending]{opacity:.55}
+
+ /* A collapsed step: what to glance at, and one way back in. */
+ .step-summary{display:flex;align-items:center;gap:.7rem;flex-wrap:wrap}
+ .step-summary canvas{max-height:3.5rem;border-radius:6px;border:1px solid var(--line);
+   display:block;background:var(--bg)}
+
+ /* The "asking..." state is a spinner, not just text, and it lives in the SAME card
+    element every time a member is asked again -- see `ask()`. That is the actual fix
+    for the bug this was built to fix: a stale error from a previous press can no longer
+    sit next to a fresh "asking..." card, because there is only ever one card per member. */
+ .spinner{width:1.1rem;height:1.1rem;border-radius:50%;flex:none;
+   border:2px solid color-mix(in oklab,var(--ink) 20%,transparent);
+   border-top-color:var(--accent);animation:spin .7s linear infinite}
+ @keyframes spin{to{transform:rotate(360deg)}}
+
+ /* Per-token hesitation, the page's default view for a reading with token data (7f).
+    Background tint only -- text stays the page's normal ink on its normal surface, so
+    contrast is whatever the theme already guarantees at every tier, not something this
+    feature has to re-earn. A second, non-color channel (underline weight) carries the
+    same three-way signal for anyone who can't use color at all. Thresholds are a first
+    guess, not a measurement -- see app/handwriting.py token_confidences(); recalibrate
+    once this has run against real ambiguous ink. */
+ .reading{margin:.7rem 0}
+ .reading-meta{margin:.15rem 0 0}
+ .reading-tokens{line-height:2}
+ .tok{padding:.03em .12em;border-radius:3px;cursor:pointer}
+ .tok-steady{background:color-mix(in oklab,var(--ok) 15%,transparent)}
+ .tok-wavering{background:color-mix(in oklab,var(--warn-line) 22%,transparent);
+   text-decoration:underline;text-decoration-style:dashed;
+   text-decoration-color:color-mix(in oklab,var(--warn-line) 70%,transparent)}
+ .tok-hesitant{background:color-mix(in oklab,var(--bad) 20%,transparent);
+   text-decoration:underline;text-decoration-style:dotted;text-decoration-thickness:2px;
+   text-decoration-color:color-mix(in oklab,var(--bad) 70%,transparent)}
+ .tok-popover{position:absolute;z-index:20;max-width:22rem;padding:.5rem .7rem;
+   border-radius:8px;background:var(--ink);color:var(--bg);font-size:.85rem;
+   box-shadow:var(--shadow)}
+ .toggle-view{display:block;margin-top:.35rem;font-size:.8rem;padding:.3rem .7rem;
+   min-height:auto}
 </style>
+<link rel="stylesheet" href="/static/katex/katex.min.css">
 
 {# The page's own honesty rule, in the place it will actually be read. Everything below
    presents a distribution and never a winner; this paragraph is why. #}
@@ -51,6 +107,12 @@ the check here</strong>, and nothing on this page has been verified by anything 
 
 <noscript><div class="warn">This page needs JavaScript: the camera, the crop and the
 results all happen in the browser.</div></noscript>
+
+<div class="steps" id="steps" aria-label="Progress">
+  <button type="button" data-step="1"><span class="n">1</span>Capture</button>
+  <button type="button" data-step="2"><span class="n">2</span>Crop</button>
+  <button type="button" data-step="3"><span class="n">3</span>Read</button>
+</div>
 
 {# 7a, the wall. getUserMedia is undefined outside a secure context, with no permission
    prompt and no error worth reading, so the page has to say what happened itself. Hidden
@@ -77,84 +139,103 @@ results all happen in the browser.</div></noscript>
   — that is the whole tool minus the live camera, and it needs no secure context.</p>
 </div>
 
-<div class="card">
+<div class="card" id="card1">
   <h2 style="margin-top:.2rem">1 · The capture</h2>
 
-  <div class="inline" id="camera-controls">
-    <button type="button" id="start">Start camera</button>
-    <label class="button secondary" for="file">Use a file
-      <input type="file" id="file" accept="image/*" hidden></label>
-    <span class="muted">…or paste an image (⌘V / Ctrl-V).</span>
+  <div id="capture-expanded">
+    <div class="inline" id="camera-controls">
+      <button type="button" id="start">Start camera</button>
+      <label class="button secondary" for="file">Use a file
+        <input type="file" id="file" accept="image/*" hidden></label>
+      <span class="muted">…or paste an image (⌘V / Ctrl-V).</span>
+    </div>
+
+    <div class="viewer" id="viewer" hidden>
+      <video id="preview" playsinline muted></video>
+      <div class="zoomrow" id="zoomrow" hidden>
+        <span>zoom</span><input id="zoom" type="range" min="1" max="1" step="0.1" value="1">
+        <span id="zoomval" class="mono">1.0×</span>
+      </div>
+      <div class="viewer-bar">
+        {# Inline SVG, not a Unicode glyph. `⇄` and `✕` rendered as BLANK BUTTONS on iOS
+           Safari (2026-08-30) -- the system font simply has no glyph for them and there is
+           no fallback to notice. An icon that depends on font coverage is a bet; an SVG
+           path is not. Text beside each one as well, because an unlabelled icon button is
+           a guess even when it does draw. #}
+        <button type="button" class="secondary" id="flip" title="Front / rear camera">
+          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor"
+               stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M4 8h14M14 4l4 4-4 4M20 16H6M10 12l-4 4 4 4"/>
+          </svg>Flip</button>
+        <button type="button" class="shoot" id="shoot">Capture</button>
+        <select id="devices" aria-label="Camera"></select>
+        <button type="button" class="secondary" id="stop" title="Stop the camera">
+          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor"
+               stroke-width="2" stroke-linecap="round" aria-hidden="true">
+            <path d="M6 6l12 12M18 6L6 18"/>
+          </svg>Stop</button>
+      </div>
+      {# Shown only when the browser enumerated exactly one camera. Without it, a visualiser
+         Chrome never saw and a visualiser it saw but would not open look identical from
+         here -- the picker hides itself in the first case and the user has nothing to read.
+         Reported 2026-08-31 against a USB visualiser on a Linux laptop. #}
+      <p class="muted" id="devices-note" hidden></p>
+    </div>
+
+    <p class="muted" id="camera-note">Resolution is the whole ballgame: a 640×480 stream
+    produces a bad hint that costs you more time than no hint. On a tablet the rear camera
+    is the one you want — <strong>Flip</strong> switches. Hold it square over the page and
+    fill the frame with the line, not the whole script; you can crop after, but you cannot
+    add detail that was never captured.</p>
   </div>
 
-  <div class="viewer" id="viewer" hidden>
-    <video id="preview" playsinline muted></video>
-    <div class="zoomrow" id="zoomrow" hidden>
-      <span>zoom</span><input id="zoom" type="range" min="1" max="1" step="0.1" value="1">
-      <span id="zoomval" class="mono">1.0×</span>
-    </div>
-    <div class="viewer-bar">
-      {# Inline SVG, not a Unicode glyph. `⇄` and `✕` rendered as BLANK BUTTONS on iOS
-         Safari (2026-08-30) -- the system font simply has no glyph for them and there is
-         no fallback to notice. An icon that depends on font coverage is a bet; an SVG
-         path is not. Text beside each one as well, because an unlabelled icon button is
-         a guess even when it does draw. #}
-      <button type="button" class="secondary" id="flip" title="Front / rear camera">
-        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor"
-             stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-          <path d="M4 8h14M14 4l4 4-4 4M20 16H6M10 12l-4 4 4 4"/>
-        </svg>Flip</button>
-      <button type="button" class="shoot" id="shoot">Capture</button>
-      <select id="devices" aria-label="Camera"></select>
-      <button type="button" class="secondary" id="stop" title="Stop the camera">
-        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor"
-             stroke-width="2" stroke-linecap="round" aria-hidden="true">
-          <path d="M6 6l12 12M18 6L6 18"/>
-        </svg>Stop</button>
-    </div>
-    {# Shown only when the browser enumerated exactly one camera. Without it, a visualiser
-       Chrome never saw and a visualiser it saw but would not open look identical from
-       here -- the picker hides itself in the first case and the user has nothing to read.
-       Reported 2026-08-31 against a USB visualiser on a Linux laptop. #}
-    <p class="muted" id="devices-note" hidden></p>
+  <div class="step-summary" id="capture-collapsed" hidden>
+    <canvas id="capture-thumb"></canvas>
+    <p class="muted" style="margin:0">Captured.</p>
+    <button type="button" class="secondary" id="retake-collapsed">Retake</button>
   </div>
-
-  <p class="muted" id="camera-note">Resolution is the whole ballgame: a 640×480 stream
-  produces a bad hint that costs you more time than no hint. On a tablet the rear camera
-  is the one you want — <strong>Flip</strong> switches. Hold it square over the page and
-  fill the frame with the line, not the whole script; you can crop after, but you cannot
-  add detail that was never captured.</p>
 </div>
 
 <div class="card" id="stage" hidden>
   <h2 style="margin-top:.2rem">2 · The crop</h2>
-  <p class="muted">Drag a box around the word. A crop is a large gain in effective
-  resolution for free — the model spends the same prompt tokens on a page as on a word.</p>
-  <div id="canvas-wrap" style="position:relative;touch-action:none">
-    <canvas id="shot"></canvas>
-    <div id="box" hidden style="position:absolute;border:2px solid var(--accent);
-         background:color-mix(in oklab,var(--accent) 18%,transparent);pointer-events:none"></div>
+
+  <div id="crop-expanded">
+    <p class="muted">Drag a box around the word. A crop is a large gain in effective
+    resolution for free — the model spends the same prompt tokens on a page as on a word.</p>
+    <div id="canvas-wrap" style="position:relative;touch-action:none">
+      <canvas id="shot"></canvas>
+      <div id="box" hidden style="position:absolute;border:2px solid var(--accent);
+           background:color-mix(in oklab,var(--accent) 18%,transparent);pointer-events:none"></div>
+    </div>
+    <p id="dims" class="muted"></p>
+    <div id="cropwrap" hidden>
+      <p class="muted" style="margin-bottom:.3rem">What the model is sent, at its own size:</p>
+      <canvas id="cropview"></canvas>
+    </div>
+    <div class="inline">
+      <button type="button" id="read">Read it</button>
+      <button type="button" class="secondary" id="clear-crop">Whole capture instead</button>
+      <label style="display:inline-flex;align-items:center;gap:.4rem">samples
+        <input id="samples" type="number" min="1" max="8" value="{{ samples }}"
+               style="width:5rem;min-height:2.4rem"></label>
+    </div>
+    <p class="muted" id="samples-note">{{ samples }} samples at temperature
+    {{ temperature }} answers <em>how sure is this model</em>. It is not the same question
+    as <em>is this ink ambiguous</em> — only a second model answers that, and it is asked
+    once rather than sampled, because sampling it would answer the first question again.</p>
   </div>
-  <p id="dims" class="muted"></p>
-  <div id="cropwrap" hidden>
-    <p class="muted" style="margin-bottom:.3rem">What the model is sent, at its own size:</p>
-    <canvas id="cropview"></canvas>
+
+  <div class="step-summary" id="crop-collapsed" hidden>
+    <canvas id="crop-thumb"></canvas>
+    <p class="muted" id="crop-collapsed-text" style="margin:0"></p>
+    <button type="button" class="secondary" id="edit-crop">Edit crop</button>
   </div>
-  <div class="inline">
-    <button type="button" id="read">Read it</button>
-    <button type="button" class="secondary" id="clear-crop">Whole capture instead</button>
-    <button type="button" class="secondary" id="retake" hidden>Retake</button>
-    <label style="display:inline-flex;align-items:center;gap:.4rem">samples
-      <input id="samples" type="number" min="1" max="8" value="{{ samples }}"
-             style="width:5rem;min-height:2.4rem"></label>
-  </div>
-  <p class="muted" id="samples-note">{{ samples }} samples at temperature
-  {{ temperature }} answers <em>how sure is this model</em>. It is not the same question
-  as <em>is this ink ambiguous</em> — only a second model answers that, and it is asked
-  once rather than sampled, because sampling it would answer the first question again.</p>
 </div>
 
-<div id="results"></div>
+<div class="card" id="stage3" hidden>
+  <h2 style="margin-top:.2rem">3 · The reading</h2>
+  <div id="results"></div>
+</div>
 
 <div class="card" id="others" hidden>
   <h2 style="margin-top:.2rem">Ask another model</h2>
@@ -178,6 +259,8 @@ results all happen in the browser.</div></noscript>
   length of one request, in the app's memory.</p>
 </details>
 
+<script src="/static/katex/katex.min.js"></script>
+<script src="/static/katex/contrib/auto-render.min.js"></script>
 <script>
 const MEMBERS = {{ members | tojson }};
 const MIN_LONG_EDGE = {{ min_long_edge }};
@@ -188,6 +271,7 @@ const shot = $("shot"), ctx = shot.getContext("2d");
 let stream = null, capture = null;          // capture: {width,height} of the full frame
 let crop = null;                            // {x,y,w,h} in capture pixels
 let answered = [];                          // one entry per member that has answered
+let requestBusy = false;                    // one hint request in flight from this tab
 
 // ── 7a: is there a camera API at all ────────────────────────────────────────
 const hasCamera = !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia);
@@ -210,6 +294,74 @@ if (!hasCamera) {
     $("upgrade-link").href = (here || HTTPS_ORIGINS[0]) + location.pathname + location.search;
     $("upgrade").hidden = false;
   }
+}
+
+// ── the step indicator ───────────────────────────────────────────────────────
+// Not a locked wizard: every pill re-expands its step so a capture or crop can still be
+// revised. It exists to answer "where am I", which nothing on the page said before --
+// the camera, the crop canvas and the results used to all sit open at the same time.
+function setStep(n) {
+  document.querySelectorAll("#steps button").forEach(btn => {
+    const s = +btn.dataset.step;
+    btn.dataset.state = s < n ? "done" : s === n ? "current" : "pending";
+    if (s === n) btn.setAttribute("aria-current", "step"); else btn.removeAttribute("aria-current");
+  });
+}
+document.querySelectorAll("#steps button").forEach(btn => {
+  btn.addEventListener("click", () => {
+    const s = +btn.dataset.step;
+    if (s === 1) return expandCapture();
+    if (s === 2) { if ($("stage").hidden) return; return expandCrop(); }
+    if (s === 3 && !$("stage3").hidden) {
+      setStep(3);
+      $("stage3").scrollIntoView({behavior: "smooth", block: "start"});
+    }
+  });
+});
+setStep(1);
+
+// ── collapsing a step once the operator has moved past it ───────────────────
+function collapseCapture() {
+  $("capture-expanded").hidden = true;
+  const thumb = $("capture-thumb"), w = 64, h = Math.round(64 * shot.height / shot.width) || 64;
+  thumb.width = w; thumb.height = h;
+  thumb.getContext("2d").drawImage(shot, 0, 0, w, h);
+  $("capture-collapsed").hidden = false;
+}
+function expandCapture() {
+  $("capture-expanded").hidden = false;
+  $("capture-collapsed").hidden = true;
+  setStep(1);
+  $("card1").scrollIntoView({behavior: "smooth", block: "start"});
+}
+$("retake-collapsed").addEventListener("click", expandCapture);
+
+function collapseCrop() {
+  $("crop-expanded").hidden = true;
+  const src = crop || {x: 0, y: 0, w: shot.width, h: shot.height};
+  const thumb = $("crop-thumb"), w = 96, h = Math.round(96 * src.h / src.w) || 96;
+  thumb.width = w; thumb.height = h;
+  thumb.getContext("2d").drawImage(shot, src.x, src.y, src.w, src.h, 0, 0, w, h);
+  $("crop-collapsed-text").textContent = crop
+    ? `Crop ${Math.round(crop.w)}×${Math.round(crop.h)}` : "Whole capture";
+  $("crop-collapsed").hidden = false;
+}
+function expandCrop() {
+  $("crop-expanded").hidden = false;
+  $("crop-collapsed").hidden = true;
+  setStep(2);
+  $("stage").scrollIntoView({behavior: "smooth", block: "start"});
+}
+$("edit-crop").addEventListener("click", expandCrop);
+
+// A fresh capture, or a redrawn crop, invalidates whatever was read for the PREVIOUS
+// one -- shown results that no longer match what's on screen are their own kind of
+// stale-state confusion, same complaint as the per-member card fix below.
+function resetResults() {
+  $("results").innerHTML = "";
+  $("others").hidden = true;
+  $("stage3").hidden = true;
+  answered = [];
 }
 
 // ── the camera ─────────────────────────────────────────────────────────────
@@ -415,14 +567,13 @@ function drawBitmap(bitmap) {
   capture = {width: bitmap.width, height: bitmap.height};
   crop = null; $("box").hidden = true; $("cropwrap").hidden = true;
   $("stage").hidden = false;
-  $("retake").hidden = !stream;
-  $("results").innerHTML = ""; $("others").hidden = true; answered = [];
+  $("crop-expanded").hidden = false; $("crop-collapsed").hidden = true;
+  resetResults();
+  collapseCapture();
+  setStep(2);
   showDims();
   $("stage").scrollIntoView({behavior: "smooth", block: "start"});
 }
-
-$("retake").addEventListener("click", () =>
-  $("viewer").scrollIntoView({behavior: "smooth", block: "center"}));
 
 // The answer to "there is no zoom": there is, and it is the crop -- but only if you can
 // SEE it. This renders the selection at its own pixel size (capped), so a box drawn round
@@ -459,6 +610,7 @@ shot.addEventListener("pointerup", (e) => {
   const end = pointAt(e), scale = shot.width / shot.getBoundingClientRect().width;
   const box = corners(dragging, end);
   dragging = null;
+  resetResults();               // whatever was read applies to the crop being replaced
   if (box.w < 8 || box.h < 8) {   // a tap, not a drag
     crop = null; $("box").hidden = true; showCropView(); return showDims();
   }
@@ -482,6 +634,7 @@ function paintBox(a, b) {
 }
 $("clear-crop").addEventListener("click", () => {
   crop = null; $("box").hidden = true; showCropView(); showDims();
+  resetResults();
 });
 
 // ── asking ──────────────────────────────────────────────────────────────────
@@ -495,19 +648,40 @@ function currentImage() {
 }
 
 $("read").addEventListener("click", () => {
-  $("results").innerHTML = ""; answered = [];
+  collapseCrop();
+  setStep(3);
+  $("stage3").hidden = false;
+  $("stage3").scrollIntoView({behavior: "smooth", block: "start"});
   ask(MEMBERS.find(m => m.primary) || MEMBERS[0]);
 });
 
+// One button (or its state) can't fire a second overlapping request while the first is
+// still running -- the server serialises through one GPU lock anyway, but a page that lets
+// two "asking..." cards race is its own source of "which one is current" confusion.
+function setBusy(busy) {
+  requestBusy = busy;
+  $("read").disabled = busy;
+  $("member-buttons").querySelectorAll("button").forEach(b => {
+    b.disabled = busy || b.dataset.installed === "false";
+  });
+}
+
 async function ask(member) {
-  const card = document.createElement("div");
-  card.className = "card";
+  // The SAME card every time this member is asked, so a retry after an error replaces
+  // that error rather than sitting a fresh "asking..." card next to the old one.
+  let card = $("result-" + member.id);
+  if (!card) {
+    card = document.createElement("div");
+    card.className = "card";
+    card.id = "result-" + member.id;
+    $("results").appendChild(card);
+  }
   card.innerHTML = `<h2 style="margin-top:.2rem">${member.name}</h2>
-    <p class="muted">asking… the model is started if it is not running, which takes a
-    few seconds. Everything here shares one GPU, so this can also be queued behind a
-    conversion.</p>`;
-  $("results").appendChild(card);
+    <p class="muted"><span class="spinner" aria-hidden="true"></span> asking… the
+    model is started if it is not running, which takes a few seconds. Everything
+    here shares one GPU, so this can also be queued behind a conversion.</p>`;
   card.scrollIntoView({behavior: "smooth", block: "nearest"});
+  setBusy(true);
 
   let data;
   try {
@@ -526,6 +700,7 @@ async function ask(member) {
     });
     data = await response.json();
   } catch (err) { data = {error: String(err)}; }
+  setBusy(false);
   render(card, member, data);
   if (data.readings && data.readings.length) {
     answered = answered.filter(a => a.id !== member.id)
@@ -554,19 +729,15 @@ function render(card, member, data) {
     card.appendChild(el("p", "muted", "no reading came back."));
 
   readings.forEach((reading, i) => {
-    const row = document.createElement("p");
-    row.style.margin = ".5rem 0";
-    const strong = document.createElement("span");
-    strong.className = "mono";
-    strong.style.fontSize = i === 0 ? "1.25rem" : "1.05rem";
-    // textContent, always: a member that writes <del>fit</del> has READ the strikethrough,
-    // and that markup is the most honest thing on the page. Shown literally, never parsed.
-    strong.textContent = reading.text;
-    row.appendChild(strong);
-    const count = el("span", "muted", ` — ${reading.count} of ${data.samples.length}` +
-                                      (reading.truncated ? " · hit the token ceiling" : ""));
-    count.style.marginLeft = ".5rem";
-    row.appendChild(count);
+    const row = document.createElement("div");
+    row.className = "reading";
+    const textWrap = document.createElement("div");
+    textWrap.style.fontSize = i === 0 ? "1.25rem" : "1.05rem";
+    renderReadingText(textWrap, reading);
+    row.appendChild(textWrap);
+    row.appendChild(el("p", "muted reading-meta",
+      `${reading.count} of ${data.samples.length}` +
+      (reading.truncated ? " · hit the token ceiling" : "")));
     card.appendChild(row);
   });
 
@@ -587,6 +758,97 @@ function el(tag, className, text) {
   return node;
 }
 
+// ── one reading: hesitation by default, LaTeX in the clean view ─────────────
+// Two views of the same text, never composited: KaTeX's auto-render matches `$...$`
+// etc. against a whole TEXT NODE, so wrapping every token in its own <span> first (for
+// the hesitation tints) would stop it from ever seeing a complete delimiter pair. A
+// reading with token data starts in the hesitation view and can be switched to the
+// clean, KaTeX-rendered view -- useful when the tinting fragments a formula into
+// something harder to read than the raw text would have been.
+function renderReadingText(container, reading) {
+  container.innerHTML = "";
+  const hasTokens = Array.isArray(reading.tokens) && reading.tokens.length > 0;
+  const textEl = document.createElement("span");
+  container.appendChild(textEl);
+  let showingHesitation = hasTokens;
+
+  function paintClean() {
+    textEl.className = "mono";
+    // textContent, always, before KaTeX ever touches it: a member that writes
+    // <del>fit</del> has READ the strikethrough, and that markup is the most honest
+    // thing on the page. Never parsed as HTML.
+    textEl.textContent = reading.text;
+    if (window.renderMathInElement) {
+      try {
+        renderMathInElement(textEl, {
+          throwOnError: false,   // garbled OCR math degrades to visible text, not a crash
+          delimiters: [
+            {left: "$$", right: "$$", display: true},
+            {left: "$", right: "$", display: false},
+            {left: "\\(", right: "\\)", display: false},
+            {left: "\\[", right: "\\]", display: true},
+          ],
+        });
+      } catch (err) { /* KaTeX not loaded, or truly malformed input -- text stands as-is */ }
+    }
+  }
+
+  function paintHesitation() {
+    textEl.className = "mono reading-tokens";
+    textEl.innerHTML = "";
+    reading.tokens.forEach(tok => {
+      const span = document.createElement("span");
+      span.className = "tok " + hesitationTier(tok.prob);
+      span.textContent = tok.text;
+      span.tabIndex = 0;
+      span.title = Math.round(tok.prob * 100) + "%";
+      span.addEventListener("click", (e) => { e.stopPropagation(); showTokenDetail(span, tok); });
+      textEl.appendChild(span);
+    });
+  }
+
+  (showingHesitation ? paintHesitation : paintClean)();
+
+  if (hasTokens) {
+    const toggle = document.createElement("button");
+    toggle.type = "button"; toggle.className = "secondary toggle-view";
+    toggle.textContent = "Show clean text";
+    toggle.addEventListener("click", () => {
+      showingHesitation = !showingHesitation;
+      (showingHesitation ? paintHesitation : paintClean)();
+      toggle.textContent = showingHesitation ? "Show clean text" : "Show hesitation";
+    });
+    container.appendChild(toggle);
+  }
+}
+
+function hesitationTier(prob) {
+  if (prob >= 0.92) return "tok-steady";
+  if (prob >= 0.6) return "tok-wavering";
+  return "tok-hesitant";
+}
+
+function showTokenDetail(anchorEl, tok) {
+  let pop = $("tok-popover");
+  if (!pop) {
+    pop = document.createElement("div");
+    pop.id = "tok-popover"; pop.className = "tok-popover"; pop.hidden = true;
+    document.body.appendChild(pop);
+    document.addEventListener("click", () => { pop.hidden = true; });
+  }
+  const pct = (p) => Math.round(p * 100) + "%";
+  const alts = (tok.alternates || [])
+    .filter(a => a.text !== tok.text)
+    .slice(0, 2)
+    .map(a => `"${a.text}" ${pct(a.prob)}`);
+  pop.textContent = `"${tok.text}" ${pct(tok.prob)}`
+    + (alts.length ? ` — also considered ${alts.join(", ")}` : "");
+  const rect = anchorEl.getBoundingClientRect();
+  pop.style.left = Math.max(4, rect.left + window.scrollX) + "px";
+  pop.style.top = (rect.bottom + window.scrollY + 4) + "px";
+  pop.hidden = false;
+}
+
 function buildMemberButtons() {
   const wrap = $("member-buttons");
   wrap.innerHTML = "";
@@ -596,7 +858,8 @@ function buildMemberButtons() {
     button.textContent = member.installed
       ? `${member.name} · ~${member.approx_gib} GiB`
       : `${member.name} — unit not installed`;
-    button.disabled = !member.installed;
+    button.dataset.installed = member.installed ? "true" : "false";
+    button.disabled = !member.installed || requestBusy;
     button.title = member.note;
     button.addEventListener("click", () => ask(member));
     wrap.appendChild(button);

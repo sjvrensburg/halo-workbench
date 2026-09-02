@@ -159,6 +159,16 @@ def read(payload: dict = Body(...)):
     finally:
         _GPU.release()
 
+    readings = handwriting.group(results)
+    for reading in readings:
+        # Attached here, not inside handwriting.group(), so that function's tested
+        # return contract (tests/phase7_driver.py) stays untouched. `text` is an
+        # exact match, not the normalised key `group()` groups by, because token
+        # spans belong to one specific generation.
+        match = next((s for s in results
+                      if s.get("text") == reading["text"] and s.get("tokens")), None)
+        reading["tokens"] = match["tokens"] if match else None
+
     silent = [sample for sample in results if sample["silent"]]
     # Sizes and timings only. Never a reading -- these are student scripts, and the
     # journal is not where a name should turn up (CLAUDE.md "Privacy").
@@ -172,7 +182,7 @@ def read(payload: dict = Body(...)):
         "mode": mode,
         "temperature": temperature,
         "started_wait": round(waited, 1),
-        "readings": handwriting.group(results),
+        "readings": readings,
         "samples": results,
         "silent_count": len(silent),
         # Reported rather than asserted: an empty answer from Chandra is a known
