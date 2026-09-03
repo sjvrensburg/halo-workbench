@@ -191,10 +191,11 @@ listener: the app binds `127.0.0.1` and that binding is the whole access control
 | 8088 | Open Notebook — Ornith-1.5-35B-A3B, prose | same-language *rewrite* |
 | 8094 | this repo — Hy-MT2-7B, `llama-hymt2` | zh↔en translate; started on demand |
 | 8086 | Open Notebook's vector search | not used; never touched |
-| 8097 | olmOCR-2-7B | `/hint`'s primary voice; started on demand |
-| 8084 | Muse Glimmer 30B (halo-prep's) | `/hint`, second voice, on request only |
-| 8090 | Qwen3.8-27B (halo-prep's) | `/hint`, on request only |
-| 8098 | this repo — Chandra-OCR-2, `llama-chandra` | `/hint`, third voice; unit ships here, not installed by default |
+| 8099 | this repo — GLM-OCR, `llama-glmocr` | `/hint`'s primary voice (bake-off, 2026-09-03); started on demand |
+| 8097 | olmOCR-2-7B | `/hint`'s second opinion (was primary until 2026-09-03); started on demand |
+| 8084 | Muse Glimmer 30B (halo-prep's) | not in `/hint`'s ensemble since the 2026-09-03 bake-off; port unused by this app |
+| 8090 | Qwen3.8-27B (halo-prep's) | not in `/hint`'s ensemble since the 2026-09-03 bake-off; port unused by this app |
+| 8098 | this repo — Chandra-OCR-2, `llama-chandra` | unit still ships, not installed by default; not in `/hint`'s ensemble since the 2026-09-03 bake-off |
 
 ## The rule the whole project is organised around
 

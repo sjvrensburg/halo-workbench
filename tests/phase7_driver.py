@@ -39,8 +39,13 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 # it started the real :8097 unit and then polled a dead address for three minutes before
 # reporting the model down — with the model up and answering the whole time (2026-08-30).
 FAKE_PORT = int(os.environ.get("WORKBENCH_FAKE_PORT", 8399))
+# A second fake port for the second-opinion member: the "no two members share a port"
+# check (below) requires distinct endpoints, and both members are exercised by name in
+# this file's /hint/read calls, so both need something answering behind them.
+FAKE_PORT_SECOND = int(os.environ.get("WORKBENCH_FAKE_PORT_SECOND", 8398))
 if sys.argv[1:2] != ["live"]:
-    os.environ.setdefault("WORKBENCH_OLMOCR_ENDPOINT", f"http://127.0.0.1:{FAKE_PORT}")
+    os.environ.setdefault("WORKBENCH_GLMOCR_ENDPOINT", f"http://127.0.0.1:{FAKE_PORT}")
+    os.environ.setdefault("WORKBENCH_OLMOCR_ENDPOINT", f"http://127.0.0.1:{FAKE_PORT_SECOND}")
 
 from app import config, handwriting, hint_store  # noqa: E402
 
@@ -105,6 +110,15 @@ def serve() -> HTTPServer:
     return server
 
 
+def serve_second() -> HTTPServer:
+    """The second-opinion member's own fake server -- same handler, same Fake.script
+    class state, different port, so the two members don't collide on 'no two members
+    share a port'."""
+    server = HTTPServer(("127.0.0.1", FAKE_PORT_SECOND), Fake)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    return server
+
+
 # ── images, without an image library ─────────────────────────────────────────
 
 def sample_images() -> dict[str, bytes]:
@@ -146,6 +160,7 @@ def offline() -> int:
 
     print("\n>> one request, and the failure that must not be silent")
     server = serve()
+    server_second = serve_second()
     endpoint = f"http://127.0.0.1:{FAKE_PORT}"
     try:
         Fake.script = [{"content": "  the reading  "}]
@@ -352,15 +367,16 @@ def offline() -> int:
         Fake.script = [{"content": "the cat"}]
         Fake.seen = []
         second = client.post("/hint/read", json={
-            "member": "olmocr", "image": data_url(images["jpeg"], "image/jpeg")}).json()
+            "member": "glm-ocr", "image": data_url(images["jpeg"], "image/jpeg")}).json()
         check("the primary's default is the spread", len(second["samples"]) == config.HINT_SAMPLES)
         check("every member carries its own token ceiling",
               all(set(m["max_tokens"]) == {"crop", "page"} for m in config.HINT_MEMBERS),
               "one ceiling for all of them made Muse return empty three times out of three")
-        check("a reasoning member gets more room than the primary",
-              all(m["max_tokens"]["crop"] > MEMBERS_BY_ID["olmocr"]["max_tokens"]["crop"]
-                  for m in config.HINT_MEMBERS if not m["primary"]),
-              "they reach the answer only after the reasoning")
+        check("both members answer directly, so neither needs extra room",
+              all(m["max_tokens"]["crop"] == MEMBERS_BY_ID["olmocr"]["max_tokens"]["crop"]
+                  for m in config.HINT_MEMBERS),
+              "the old asymmetric ceiling was for Muse/Chandra/Qwen38, which reasoned "
+              "before answering -- gone from the ensemble since the 2026-09-03 bake-off")
         check("the ceiling actually reaches the request",
               Fake.seen[0]["max_tokens"] == MEMBERS_BY_ID["olmocr"]["max_tokens"]["crop"])
 
@@ -380,6 +396,7 @@ def offline() -> int:
               "silence must not read as 'there was nothing written there'")
     finally:
         server.shutdown()
+        server_second.shutdown()
 
     print("\n>> the wiring that nothing else validates")
     endpoints = [member["endpoint"] for member in config.HINT_MEMBERS]
@@ -394,13 +411,17 @@ def offline() -> int:
               < config.MODEL_IDLE_SECONDS
               for m in config.HINT_MEMBERS if m["approx_gib"] > 12),
           "~20 GiB held through a coffee break is what PLAN.md 7e says not to do")
-    unit = Path(__file__).resolve().parent.parent / "config/llama-chandra.service"
-    # Line-anchored, not a substring: the file's own comment explains why the section is
-    # absent, and a naive `in` test reads that explanation as the thing it warns against.
-    check("the unit this repo ships has no [Install] section",
-          unit.exists() and not any(line.startswith("[Install]")
-                                    for line in unit.read_text().splitlines()),
-          "there must be nothing to enable by accident")
+    # Line-anchored, not a substring: each file's own comment explains why the section
+    # is absent, and a naive `in` test reads that explanation as the thing it warns
+    # against. llama-chandra.service stays checked even though Chandra left the active
+    # ensemble in the 2026-09-03 bake-off -- the file still ships, so it still must not
+    # be enableable by accident.
+    for unit_name in ("llama-chandra.service", "llama-glmocr.service"):
+        unit = Path(__file__).resolve().parent.parent / "config" / unit_name
+        check(f"{unit_name} has no [Install] section",
+              unit.exists() and not any(line.startswith("[Install]")
+                                        for line in unit.read_text().splitlines()),
+              "there must be nothing to enable by accident")
 
     print()
     if FAILURES:

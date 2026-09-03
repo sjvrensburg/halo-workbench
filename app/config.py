@@ -115,18 +115,45 @@ STYLE_GUIDE_DIRS = [
 # and is checked against MemAvailable before a start: this box has no swap and OOM-kills
 # under pressure (halo-prep pitfall #17), and three of these resident is ~30 GiB.
 #
-# Gemma-4-26B is deliberately absent, for two separate reasons: it paraphrases at low
-# resolution (a paraphraser in an ensemble produces fluent disagreement that is not about
-# the ink), and its unit binds :8088 — Open Notebook's port. PLAN.md 7d's page-triage idea
-# needs a port that is not someone else's before it can be built.
+# REPLACED 2026-09-03 after the operator's MoE bake-off. Muse Glimmer, Chandra-OCR-2 and
+# Qwen3.8-27B are gone from the ensemble, not just demoted: the bake-off (two real exam
+# crops, one math-heavy, one prose-heavy, temp 0) found GLM-OCR correct on both at 9.9-
+# 10.0 s/crop against olmOCR-2's 19.9-21.6 s, and a `--image-max-tokens` sweep on the two
+# survivors found capping the dynamic-resolution image encoder to 2048 tokens (from an
+# unclamped ~4100 for these crops) roughly HALVES the time on both with no transcription
+# loss on either test crop — 2048 was kept over an even faster 1024 cap because 1024
+# visibly garbled content on olmOCR-2 and introduced a Z/2 glyph confusion on GLM-OCR.
+# GLM-OCR is now primary; olmOCR-2 (previously primary, still 15/15 in halo-prep's own
+# batch bake-off) is kept on as the second opinion specifically because it is a DIFFERENT
+# lineage and DIFFERENT failure mode from GLM-OCR, which is what a second voice is for.
+# Muse/Chandra/Qwen38 were never re-measured against this bar and are not reinstated
+# without a fresh comparison -- resurrecting one from this comment without rerunning the
+# bake-off would be re-adding an untested model on the strength of a stale note.
 HINT_MEMBERS = [
+    {
+        "id": "glm-ocr",
+        "name": "GLM-OCR",
+        "endpoint": os.environ.get("WORKBENCH_GLMOCR_ENDPOINT", "http://127.0.0.1:8099"),
+        "unit": "llama-glmocr",
+        "approx_gib": 2,
+        "primary": True,
+        # Fastest and correct on both bake-off crops; also the only member that emits
+        # native `$...$` LaTeX delimiters, which is what app/tools/hint.py's KaTeX
+        # rendering (7f) is built to key off. `llama-glmocr.service` runs
+        # `--image-max-tokens 2048`, the measured sweet spot -- see the block comment
+        # above.
+        "max_tokens": {"crop": 1024, "page": 4096},
+        "note": "Correct on both bake-off crops (math-heavy and prose-heavy) at "
+                "~4.2-4.5 s/crop with the image token cap, against olmOCR-2's "
+                "14.2-16.3 s. Emits LaTeX-shaped math natively.",
+    },
     {
         "id": "olmocr",
         "name": "olmOCR-2-7B",
         "endpoint": os.environ.get("WORKBENCH_OLMOCR_ENDPOINT", "http://127.0.0.1:8097"),
         "unit": "llama-olmocr",
         "approx_gib": 10,
-        "primary": True,
+        "primary": False,
         # It answers directly, so a word needs almost no room -- measured on a 1459x125
         # crop 2026-08-30: 291 prompt tokens, 19 generated, 0.7 s per sample. But the
         # operator hit the ceiling in real use 2026-09-02 (longer handwritten passages,
@@ -136,59 +163,11 @@ HINT_MEMBERS = [
         # ~4,070 prompt tokens (PLAN.md 7d), leaving over 12,000 tokens of room even at
         # this ceiling.
         "max_tokens": {"crop": 1024, "page": 4096},
-        "note": "15/15 on symbols and the fastest measured (2.7–18.4 s/page). "
-                "Apache-2.0. Reads a strikethrough without inventing a negation.",
-    },
-    {
-        "id": "muse",
-        "name": "Muse Glimmer 30B",
-        "endpoint": os.environ.get("WORKBENCH_MUSE_ENDPOINT", "http://127.0.0.1:8084"),
-        "unit": "llama-vision",
-        "approx_gib": 20,
-        "primary": False,
-        # MEASURED THE HARD WAY, 2026-08-30, twice. At 256 tokens Muse returned an empty
-        # `content` on three samples out of three, and at 1024 it still did: it spends the
-        # budget reasoning and reaches the answer only afterwards. The tool called that
-        # silence honestly both times, which is the design working -- and both times the
-        # ceiling was the bug, not the model. Given 3000 it answered in **1236 completion
-        # tokens for a two-line crop**, 79 of which were the answer. So the ceiling here
-        # buys the rumination, not the reading, and 2048 is the measured floor plus room.
-        "max_tokens": {"crop": 2048, "page": 3072},
-        "note": "A different lineage entirely, so agreement with it means something. "
-                "But it hallucinates fluently inside strikethroughs — halo-prep measured "
-                "it rendering a struck scribble as `not`, reversing the claim.",
-    },
-    {
-        "id": "chandra",
-        "name": "Chandra-OCR-2",
-        "endpoint": os.environ.get("WORKBENCH_CHANDRA_ENDPOINT", "http://127.0.0.1:8098"),
-        # The one unit here this repo owns: config/llama-chandra.service, which the
-        # operator installs. halo-prep rejected the model for batch work and never gave
-        # it a unit, and a resident one is not wanted (PLAN.md 7e).
-        "unit": "llama-chandra",
-        "approx_gib": 6,
-        "primary": False,
-        # Also a reasoner, and untested on a crop from here -- its measured failure was
-        # 568 completion tokens with an empty `content`. Sized like Muse until someone
-        # measures it: give it room, then believe the silence when it happens anyway.
-        "max_tokens": {"crop": 2048, "page": 3072},
-        "note": "Marks struck text `<del>` instead of resolving it, and was the only "
-                "model to preserve `generalisability`. Its batch disqualifier was "
-                "returning a page as zero bytes; the page says so when it does.",
-    },
-    {
-        "id": "qwen38",
-        "name": "Qwen3.8-27B",
-        "endpoint": os.environ.get("WORKBENCH_QWEN38_ENDPOINT", "http://127.0.0.1:8090"),
-        "unit": "llama-qwen38",
-        "approx_gib": 19,
-        "primary": False,
-        # ~2,000 reasoning tokens per page in the bake-off. Whether a crop is cheaper is
-        # the open measurement this member exists to settle.
-        "max_tokens": {"crop": 2048, "page": 4096},
-        "note": "15/15 in the bake-off at 52–199 s per page, all of it ~2,000 reasoning "
-                "tokens. Untested on crops — this is the measurement, not the "
-                "recommendation.",
+        "note": "Second opinion, not primary as of 2026-09-03 -- see the block comment "
+                "above. Still 15/15 on symbols in halo-prep's own batch bake-off "
+                "(2.7-18.4 s/page), Apache-2.0, and reads a strikethrough without "
+                "inventing a negation -- a different lineage and failure mode from "
+                "GLM-OCR, which is the point of asking it second.",
     },
 ]
 

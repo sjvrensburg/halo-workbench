@@ -1,0 +1,83 @@
+# GLM-OCR on :8099 — the hint tool's primary voice (bake-off, 2026-09-03).
+#
+# Install (operator; this repo cannot):
+#   cp config/llama-glmocr.service ~/.config/systemd/user/
+#   systemctl --user daemon-reload
+#   # do NOT enable. The hint page starts it when the operator asks and
+#   # app/model_lease.py stops it again after MODEL_IDLE_SECONDS idle.
+#
+# WHY THIS MODEL, WHY THIS REPO OWNS THE UNIT. Replaced olmOCR-2 as primary after a
+# bake-off run against two real exam crops (one math-heavy, one prose-heavy) at temp 0:
+#
+#                    math crop   prose crop   accuracy
+#   GLM-OCR             9.9 s       10.0 s    correct on both
+#   olmOCR-2-7B        21.6 s       20.0 s    correct on both
+#   Qwen3-VL-30B-A3B   16.6 s       16.3 s    correct on both (19.6 GiB, too big for the win)
+#   HunyuanOCR         10.6 s   18.5 s/GARBLED  looped into repeated `(a).(b).(c)...`
+#                                              on the prose crop, hit the token ceiling
+#
+# A follow-up `--image-max-tokens` sweep (default ~4100 image tokens for these crops vs.
+# capped) found capping to 2048 roughly halves GLM-OCR's time again (down to 4.2-4.5 s)
+# with no transcription loss on either crop; capping further to 1024 introduced a Z/2
+# glyph confusion, so 2048 is the floor kept, not the fastest available. `-fa`/KV-cache
+# quantization were tried first and made no measurable difference (this work is
+# prefill-bound, not decode-bound) -- see the same session's olmOCR-2 sweep, also null.
+#
+# Small enough (1.4 GiB combined) that its own footprint is not the constraint; the
+# `HINT_MEMORY_HEADROOM_GIB` check in app/model_lease.py is what actually gates a start.
+# Not in halo-prep's config/models.conf, same reasoning as llama-chandra.service: this is
+# a model an app starts on demand, not one a person switches to by hand. :8099 is free
+# as of 2026-09-03 -- see this repo's CLAUDE.md ports table.
+#
+# LICENCE: check the model card before this ever sits behind anything shared; not
+# re-verified here since local single-user use was the only case in scope.
+
+[Unit]
+Description=llama-server — GLM-OCR (handwriting hint, primary voice)
+After=network-online.target
+
+[Service]
+Type=simple
+
+# Inert on the Vulkan build; kept because it matters the moment this is pointed at
+# build-rocm, exactly as the other units keep it.
+Environment=ROCBLAS_USE_HIPBLASLT=1
+
+# Vulkan, and not a judgement call: as of 2026-08-22 the ROCm trees compute garbage
+# on this GPU (upstream #27506, halo-prep pitfall #24).
+ExecStart=/home/stefan/src/llama.cpp/build-vulkan/bin/llama-server \
+  --model /home/stefan/models/glm-ocr/GLM-OCR-Q8_0.gguf \
+  --mmproj /home/stefan/models/glm-ocr/mmproj-GLM-OCR-Q8_0.gguf \
+  --host 127.0.0.1 \
+  --port 8099 \
+  --ctx-size 16384 \
+  --n-gpu-layers 999 \
+  --parallel 1 \
+  --load-mode dio \
+  --jinja \
+  --temp 0 \
+  --image-max-tokens 2048
+#
+# --ctx-size 16384: matches llama-olmocr.service; a full page has room alongside its
+#   transcript even at the higher end of what a crop needs.
+#
+# --temp 0: transcription is not a creative task, and the bake-off measurements above
+#   were all greedy. The hint tool overrides this per request when sampling a spread
+#   (app/handwriting.py's `read_once`, `temperature` argument) -- override the request,
+#   never the unit, same rule llama-olmocr.service documents.
+#
+# --image-max-tokens 2048: the measured sweet spot from the sweep above. Do not raise
+#   this back toward the model's default without re-running the sweep, and do not lower
+#   it to 1024 without accepting the Z/2 glyph confusion that measurement found there.
+#
+# --load-mode dio: the modern spelling of -dio. Without direct IO large models hang
+#   forever on load. Behaviour is load-bearing, spelling is not.
+#
+# --parallel 1: prefill-bound, one image per request, same reasoning as every other
+#   unit in this ensemble.
+
+Restart=on-failure
+RestartSec=5
+
+# Deliberately no [Install] section, same reasoning as llama-chandra.service: nothing
+# here should start at boot for a model used a few seconds at a time.
