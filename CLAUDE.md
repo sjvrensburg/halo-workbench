@@ -88,6 +88,12 @@ systemctl --user status halo-workbench          # and: journalctl --user -u halo
   servers behind otherwise), checks the output has markdown structure, and writes the
   checksummed `.marker-ok` sidecar. **The sidecar is the verifier** — `verify()` re-runs
   at download time so a `.md` edited after conversion stops being downloadable.
+  The upload form exposes three of `marker_single`'s many flags (mode, page range,
+  force OCR) — `_validate_options()` checks them at upload time rather than letting
+  marker_single's own parser reject a bad one 20 minutes into a job, and `_extra_args()`
+  only ever emits flags it already knows about, never a user string used as a flag
+  name. `marker_run.sh`'s sidecar records whichever mode actually ran (fixed
+  2026-09-15 in `../halo-prep`, alongside this) rather than a hardcoded `fast`.
 - `app/jobs.py` — the job store and the one worker thread. Tools register a handler
   with `@jobs.register("name")`; it either returns (`done`) or raises (`failed`). There
   is no third outcome on purpose — a result the verifier did not pass must raise.

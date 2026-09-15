@@ -17,6 +17,12 @@
   <p><span class="status {{ job.status }}">{{ job.status }}</span>
      <code>{{ job.meta.input_filename or "—" }}</code></p>
 
+  {% set opts = [] %}
+  {% if job.params.mode == "balanced" %}{% set _ = opts.append("balanced mode") %}{% endif %}
+  {% if job.params.page_range %}{% set _ = opts.append("pages " + job.params.page_range) %}{% endif %}
+  {% if job.params.force_ocr %}{% set _ = opts.append("force OCR") %}{% endif %}
+  {% if opts %}<p class="muted" style="font-size:.9rem">{{ opts | join(" · ") }}</p>{% endif %}
+
   {% if job.status in ("queued", "running") %}
     <div class="track"><span></span></div>
   {% endif %}

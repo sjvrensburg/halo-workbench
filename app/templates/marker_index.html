@@ -18,6 +18,36 @@ handed to you.</p>
     <span class="dz-text"><strong>Drop a PDF here</strong> or click to browse</span>
     <span class="dz-file muted" hidden></span>
   </label>
+
+  <details class="advanced">
+    <summary>Advanced options</summary>
+    <p>
+      <label>Mode
+        <select name="mode">
+          <option value="fast" selected>fast — lightweight CPU detectors (default)</option>
+          <option value="balanced">balanced — VLM layout + full-page OCR, slower but
+            better on messy scans</option>
+        </select>
+      </label>
+    </p>
+    <p>
+      <label>Page range <span class="muted">(optional)</span>
+        <input type="text" name="page_range" placeholder="e.g. 0,5-10,20" pattern="^\d+(-\d+)?(,\s*\d+(-\d+)?)*$">
+      </label>
+      <span class="muted" style="font-size:.85rem">0-indexed, comma-separated pages or
+        ranges. Leave blank to convert the whole document.</span>
+    </p>
+    <p>
+      <label class="inline" style="gap:.5rem">
+        <input type="checkbox" name="force_ocr" value="on" style="min-height:auto">
+        Force OCR
+      </label>
+      <span class="muted" style="font-size:.85rem">Re-reads every page with OCR
+        instead of trusting the PDF's own embedded text — for scans or documents
+        where the embedded text looks wrong.</span>
+    </p>
+  </details>
+
   <p class="inline">
     <button type="submit" id="submit-btn">Convert</button>
     {% if queued %}<span class="muted">{{ queued }} job(s) ahead of you</span>{% endif %}

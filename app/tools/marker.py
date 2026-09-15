@@ -24,12 +24,13 @@ import hashlib
 import io
 import logging
 import os
+import re
 import shutil
 import subprocess
 import zipfile
 from pathlib import Path
 
-from fastapi import APIRouter, HTTPException, Request, UploadFile
+from fastapi import APIRouter, Form, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse, Response
 
 from app import config, jobs
@@ -60,6 +61,51 @@ _EXIT_MESSAGES = {
 }
 
 STDERR_LOG = "marker.stderr.log"
+
+# ── advanced options ─────────────────────────────────────────────────────────
+# marker_single has dozens of flags (`marker_single --help`); these three are the
+# ones actually worth a per-document choice from the upload form. Everything else
+# stays at marker_run.sh's defaults.
+MODES = ("fast", "balanced")
+_PAGE_RANGE_RE = re.compile(r"^\d+(-\d+)?(,\s*\d+(-\d+)?)*$")
+
+
+def _extra_args(params: dict) -> list[str]:
+    """marker_single flags for this job's advanced options, already validated at
+    upload time (`_validate_options`) -- this only ever emits flags it knows about,
+    never a user string used as a flag name, so there is no way to smuggle an
+    arbitrary marker_single option through the form.
+    """
+    args: list[str] = []
+    if params.get("mode") == "balanced":
+        # marker_run.sh hardcodes `--mode fast` ahead of anything we pass; a later
+        # --mode on the command line wins (ordinary click behaviour, verified against
+        # this marker install 2026-09-15), and marker_run.sh's own sidecar now records
+        # whichever one actually ran rather than a hardcoded "fast" (see its header).
+        args += ["--mode", "balanced"]
+    if params.get("page_range"):
+        args += ["--page_range", params["page_range"]]
+    if params.get("force_ocr"):
+        args.append("--force_ocr")
+    return args
+
+
+def _validate_options(mode: str, page_range: str, force_ocr: bool) -> dict:
+    """Raises HTTPException(400) with a message the user can act on. Never trusts the
+    mode string as anything but a fixed choice, and never forwards page_range to a
+    subprocess without checking its shape first -- marker_single's own parser would
+    reject a bad one deep inside a 20-minute job instead of on the upload form.
+    """
+    if mode not in MODES:
+        raise HTTPException(400, f"mode must be one of {', '.join(MODES)}")
+    page_range = page_range.strip()
+    if page_range and not _PAGE_RANGE_RE.fullmatch(page_range):
+        raise HTTPException(
+            400,
+            "page range must look like '0,5-10,20' -- comma-separated page numbers "
+            "or ranges, 0-indexed",
+        )
+    return {"mode": mode, "page_range": page_range, "force_ocr": force_ocr}
 
 
 def _scope_unit(job_id: str) -> str:
@@ -180,7 +226,7 @@ def convert(job: jobs.Job) -> None:
     outdir = job.path("out")
     outdir.mkdir(exist_ok=True)
 
-    command = [str(config.MARKER_RUN), str(pdf), str(outdir)]
+    command = [str(config.MARKER_RUN), str(pdf), str(outdir), *_extra_args(job.params)]
     unit = _scope_unit(job.id)
     # MARKER_RUN_SCOPE=0 tells marker_run.sh not to open a scope of its own. Nesting
     # would put the surya servers in the inner cgroup, which our startup reaper cannot
@@ -289,12 +335,18 @@ def index(request: Request):
 
 
 @router.post("/marker")
-async def upload(file: UploadFile):
+async def upload(
+    file: UploadFile,
+    mode: str = Form("fast"),
+    page_range: str = Form(""),
+    force_ocr: bool = Form(False),
+):
     data = await file.read(MAX_UPLOAD_BYTES + 1)
     if len(data) > MAX_UPLOAD_BYTES:
         raise HTTPException(413, f"file is larger than {MAX_UPLOAD_BYTES // 1024 // 1024} MB")
 
-    job_id = jobs.submit("marker", upload=(file.filename or "upload.pdf", data))
+    params = _validate_options(mode, page_range, force_ocr)
+    job_id = jobs.submit("marker", params=params, upload=(file.filename or "upload.pdf", data))
     # 303: a reload of the status page must not repost the upload.
     return RedirectResponse(f"/marker/{job_id}", status_code=303)
 
