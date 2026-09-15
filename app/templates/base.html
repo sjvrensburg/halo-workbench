@@ -1,4 +1,4 @@
-{# One stylesheet for the whole app, inline. Four pages do not need an asset pipeline or
+{# One stylesheet for the whole app, inline. One tool does not need an asset pipeline or
    a request that can 404 behind `tailscale serve`. Design rules kept to a few:
    * one accent, used only for the primary action and focus rings;
    * light and dark from the same tokens, so neither is an afterthought;
@@ -12,17 +12,20 @@
 <title>{% block title %}halo-workbench{% endblock %}</title>
 <style>
  :root{
-   --bg:#fbfbfa; --surface:#fff; --line:#e6e4df; --ink:#1c1b19; --muted:#6f6c66;
-   --accent:#2f6f5b; --accent-ink:#fff; --warn-line:#c9922f; --warn-bg:#fbf3e2;
-   --ok:#2c7a5a; --bad:#b3392f;
-   --radius:12px; --pad:1rem; --shadow:0 1px 2px rgba(0,0,0,.05), 0 8px 24px -18px rgba(0,0,0,.35);
+   --bg:#fbfbfa; --surface:#fff; --surface-2:#f4f3f0; --line:#e6e4df; --ink:#1c1b19;
+   --muted:#6f6c66; --accent:#2f6f5b; --accent-ink:#fff; --accent-soft:#eaf3ef;
+   --warn-line:#c9922f; --warn-bg:#fbf3e2; --ok:#2c7a5a; --bad:#b3392f;
+   --radius:14px; --radius-sm:9px; --pad:1.25rem;
+   --shadow:0 1px 2px rgba(0,0,0,.05), 0 12px 28px -20px rgba(0,0,0,.35);
+   --shadow-lg:0 2px 4px rgba(0,0,0,.06), 0 24px 48px -24px rgba(0,0,0,.28);
  }
  @media (prefers-color-scheme:dark){
    :root{
-     --bg:#16171a; --surface:#1d1f23; --line:#31343a; --ink:#e9e8e4; --muted:#9a988f;
-     --accent:#5fbf9c; --accent-ink:#10231c; --warn-line:#d6a343; --warn-bg:#2a2317;
-     --ok:#5fbf9c; --bad:#e2685c;
-     --shadow:0 1px 2px rgba(0,0,0,.4), 0 10px 30px -20px #000;
+     --bg:#15161a; --surface:#1c1e22; --surface-2:#24262b; --line:#32353b; --ink:#eceae5;
+     --muted:#9a988f; --accent:#5fbf9c; --accent-ink:#0e211a; --accent-soft:#1c2c26;
+     --warn-line:#d6a343; --warn-bg:#2a2317; --ok:#5fbf9c; --bad:#e2685c;
+     --shadow:0 1px 2px rgba(0,0,0,.4), 0 14px 32px -22px #000;
+     --shadow-lg:0 2px 4px rgba(0,0,0,.5), 0 28px 52px -26px #000;
    }
  }
  *{box-sizing:border-box}
@@ -32,81 +35,80 @@
    font:16px/1.6 ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
    font-feature-settings:"kern","liga";
  }
- .wrap{max-width:62rem;margin:0 auto;padding:1.25rem max(1rem,env(safe-area-inset-left)) 4rem}
+ .wrap{max-width:44rem;margin:0 auto;padding:1.25rem max(1rem,env(safe-area-inset-left)) 4rem}
  a{color:inherit;text-decoration-color:color-mix(in oklab,var(--accent) 55%,transparent);
    text-underline-offset:.15em}
  a:hover{text-decoration-color:var(--accent)}
  code,pre,.mono{font-family:ui-monospace,SFMono-Regular,"SF Mono",Menlo,monospace;font-size:.9em}
  code{background:color-mix(in oklab,var(--ink) 7%,transparent);padding:.1em .35em;border-radius:5px;overflow-wrap:anywhere}
- pre{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);
+ pre{background:var(--surface-2);border:1px solid var(--line);border-radius:var(--radius-sm);
      padding:.9rem;overflow-x:auto;white-space:pre-wrap;word-break:break-word;margin:.6rem 0}
  pre code{background:none;padding:0}
 
- /* Header: the four tools, on every page, because a tool page is where you realise you
-    wanted a different tool. */
+ /* Header: a brand mark and one sibling link. One tool now -- no tab strip to hold. */
  header.top{position:sticky;top:0;z-index:5;background:color-mix(in oklab,var(--bg) 88%,transparent);
    backdrop-filter:saturate(1.4) blur(8px);border-bottom:1px solid var(--line)}
- header.top .wrap{padding-top:.6rem;padding-bottom:.6rem;display:flex;gap:.35rem .9rem;
-   align-items:center;flex-wrap:wrap}
- .brand{font-weight:650;letter-spacing:-.01em;text-decoration:none;margin-right:.4rem}
+ header.top .wrap{padding-top:.7rem;padding-bottom:.7rem;display:flex;gap:.6rem;
+   align-items:center}
+ .brand{display:inline-flex;align-items:center;gap:.5rem;font-weight:650;
+   letter-spacing:-.01em;text-decoration:none}
+ .brand svg{flex:none}
  .brand span{color:var(--muted);font-weight:400}
- nav.tools{display:flex;gap:.15rem;flex-wrap:wrap;margin-left:auto}
- nav.tools a{display:inline-flex;align-items:center;min-height:2.4rem;padding:.25rem .7rem;
-   border-radius:999px;text-decoration:none;color:var(--muted);font-size:.95rem}
- nav.tools a:hover{background:color-mix(in oklab,var(--ink) 6%,transparent);color:var(--ink)}
- nav.tools a[aria-current]{background:color-mix(in oklab,var(--accent) 14%,transparent);
-   color:var(--ink);font-weight:550}
+ .siblink{margin-left:auto;color:var(--muted);text-decoration:none;font-size:.92rem;
+   display:inline-flex;align-items:center;min-height:2.4rem}
+ .siblink:hover{color:var(--ink)}
 
- h1{font-size:1.5rem;line-height:1.25;letter-spacing:-.02em;margin:1.4rem 0 .2rem}
- h2{font-size:1.1rem;letter-spacing:-.01em;margin:2rem 0 .5rem}
+ h1{font-size:1.9rem;line-height:1.2;letter-spacing:-.025em;margin:1.6rem 0 .35rem;font-weight:650}
+ h2{font-size:1.05rem;letter-spacing:-.01em;margin:2rem 0 .6rem;font-weight:600}
  h1 a{text-decoration:none}
- p{margin:.7rem 0} .lede{color:var(--muted);max-width:52ch}
+ p{margin:.7rem 0} .lede{color:var(--muted);max-width:46ch;font-size:1.05rem}
 
  .card{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);
-   padding:var(--pad);margin:1rem 0;box-shadow:var(--shadow)}
+   padding:var(--pad);margin:1.1rem 0;box-shadow:var(--shadow)}
  .muted{color:var(--muted)}
- .big{font-size:1.6rem;font-weight:600;letter-spacing:-.02em;margin:.3rem 0}
+ .big{font-size:1.7rem;font-weight:650;letter-spacing:-.02em;margin:.3rem 0}
  .warn{border-left:3px solid var(--warn-line);background:var(--warn-bg);
    padding:.7rem .9rem;border-radius:0 8px 8px 0;margin:.8rem 0}
 
- .status{display:inline-flex;align-items:center;gap:.4em;padding:.15rem .6rem;border-radius:999px;
-   font-size:.78rem;font-weight:600;text-transform:uppercase;letter-spacing:.06em;
+ .status{display:inline-flex;align-items:center;gap:.4em;padding:.2rem .65rem;border-radius:999px;
+   font-size:.78rem;font-weight:650;text-transform:uppercase;letter-spacing:.06em;
    background:color-mix(in oklab,var(--ink) 8%,transparent);color:var(--muted)}
  .status::before{content:"";width:.5em;height:.5em;border-radius:50%;background:currentColor}
  .status.done{background:color-mix(in oklab,var(--ok) 16%,transparent);color:var(--ok)}
  .status.failed{background:color-mix(in oklab,var(--bad) 15%,transparent);color:var(--bad)}
  .status.running{background:color-mix(in oklab,var(--accent) 16%,transparent);color:var(--accent)}
+ .status.running::before{animation:pulse 1.6s ease-in-out infinite}
+ @keyframes pulse{0%,100%{opacity:1}50%{opacity:.35}}
+
+ /* Indeterminate progress bar for a running job -- there is no percentage to report
+    (marker does not stream progress), so this says "moving", not "how far". */
+ .track{height:6px;border-radius:999px;background:var(--surface-2);overflow:hidden;margin:.9rem 0 .2rem}
+ .track > span{display:block;height:100%;width:40%;border-radius:999px;background:var(--accent);
+   animation:sweep 1.4s ease-in-out infinite}
+ @keyframes sweep{0%{transform:translateX(-100%)}100%{transform:translateX(350%)}}
+ @media (prefers-reduced-motion:reduce){.track > span{animation:none;width:100%}}
 
  /* Before the button rule, and !important, because `display:inline-flex` below outranks
     the user-agent's `[hidden]{display:none}` -- so a `hidden` button rendered anyway.
-    Found 2026-08-30 on the hint page, where Capture sat there with no camera stream
+    Found 2026-08-30 on a since-removed page, where a control sat there with no state
     behind it. Any rule that sets `display` on a hidden-able element needs this guard. */
  [hidden]{display:none!important}
- button,.button{font:inherit;font-weight:550;min-height:2.75rem;padding:.55rem 1.1rem;
+ button,.button{font:inherit;font-weight:600;min-height:2.9rem;padding:.6rem 1.3rem;
    border-radius:10px;border:1px solid transparent;background:var(--accent);color:var(--accent-ink);
-   cursor:pointer;display:inline-flex;align-items:center;gap:.4rem}
+   cursor:pointer;display:inline-flex;align-items:center;gap:.45rem}
  button:hover,.button:hover{filter:brightness(1.06)}
- /* A disabled control must not read as the primary action. The hint page's "Start camera"
-    is disabled whenever enumerateDevices found nothing, which is a state the operator
-    will meet -- a doc cam that is off, or a browser that has not been granted access. */
  button:disabled,.button:disabled{opacity:.45;cursor:not-allowed;filter:none}
  button.secondary,.button.secondary{background:transparent;border-color:var(--line);color:var(--ink)}
  button.secondary:hover{background:color-mix(in oklab,var(--ink) 5%,transparent)}
  :where(a,button,input,select,textarea,summary):focus-visible{
    outline:2px solid var(--accent);outline-offset:2px;border-radius:8px}
 
- /* Every text-ish control, including inputs that omit type="text" -- an attribute
-    selector on [type=text] silently skips those, which is how the regex tool's
-    description box ended up as the one unstyled field on the site. */
  input:not([type=checkbox]):not([type=radio]),select,textarea{
    font:inherit;font-size:16px;  /* 16px or iOS zooms on focus */
    color:inherit;background:var(--surface);border:1px solid var(--line);
    border-radius:10px;padding:.6rem .7rem;max-width:100%;min-height:2.75rem}
  textarea{width:100%;line-height:1.6;resize:vertical}
  label{display:inline-block}
- /* A label wrapping a full-width control must be block, or the control's width:100%
-    resolves against the label's shrink-to-fit box and honours a `cols` attribute
-    instead of the layout. */
  label:has(textarea),label:has(input:not([type=checkbox]):not([type=radio])){display:block}
  label:has(textarea) textarea,label:has(input[type=text]) input{margin-top:.3rem}
  form p{margin:.8rem 0}
@@ -119,44 +121,36 @@
  /* Tables scroll rather than squashing: a job id and a filename do not fit a phone. */
  .scroll{overflow-x:auto;-webkit-overflow-scrolling:touch;margin:.5rem -.25rem}
  table{border-collapse:collapse;width:100%;font-size:.95rem}
- th{text-align:left;font-weight:600;color:var(--muted);font-size:.82rem;text-transform:uppercase;
+ th{text-align:left;font-weight:600;color:var(--muted);font-size:.8rem;text-transform:uppercase;
    letter-spacing:.05em}
- td,th{padding:.55rem .7rem .55rem 0;border-bottom:1px solid var(--line);vertical-align:top}
+ td,th{padding:.6rem .7rem .6rem 0;border-bottom:1px solid var(--line);vertical-align:top}
  tr:last-child td,tr:last-child th{border-bottom:0}
-
- ul.tools{list-style:none;padding:0;display:grid;gap:.7rem;
-   grid-template-columns:repeat(auto-fit,minmax(24rem,1fr))}
- ul.tools li{margin:0}
- ul.tools a,ul.tools .todo{display:block;height:100%;padding:.9rem 1rem;border-radius:var(--radius);
-   border:1px solid var(--line);background:var(--surface);text-decoration:none;box-shadow:var(--shadow)}
- ul.tools a:hover{border-color:color-mix(in oklab,var(--accent) 45%,var(--line))}
- ul.tools strong{display:block;margin-bottom:.15rem}
- ul.tools .todo{opacity:.6;box-shadow:none}
 
  @media (max-width:34rem){
    .wrap{padding-left:.9rem;padding-right:.9rem}
-   h1{font-size:1.3rem} .big{font-size:1.35rem}
-   nav.tools{margin-left:0;width:100%}
-   nav.tools a{padding:.25rem .55rem;font-size:.9rem}
+   h1{font-size:1.5rem} .big{font-size:1.4rem}
  }
  @media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
 </style>
 
 <header class="top"><div class="wrap">
-  <a class="brand" href="/">halo&#8209;workbench</a>
-  <nav class="tools">
-    <a href="/marker" {% if page == "marker" %}aria-current="page"{% endif %}>marker</a>
-    <a href="/redact" {% if page == "redact" %}aria-current="page"{% endif %}>redact</a>
-    <a href="/regex" {% if page == "regex" %}aria-current="page"{% endif %}>regex</a>
-    <a href="/translate" {% if page == "translate" %}aria-current="page"{% endif %}>translate</a>
-    <a href="/hint" {% if page == "hint" %}aria-current="page"{% endif %}>hint</a>
-    {# The other web UI on this box, ../drp-web. Points at its Tailscale Service name
-       rather than at evo-x3:8095 (2026-08-29): the VIP follows the service if it ever
-       moves to another machine, so this link does not go stale, and there is no port
-       for anyone to remember. Never a 100.x address -- a tailnet address returns
-       tailscaled's own 404 (halo-prep pitfall #33). #}
-    <a href="http://drp-web/">research&nbsp;&rarr;</a>
-  </nav>
+  <a class="brand" href="/">
+    {# Inline SVG, never a Unicode glyph -- CLAUDE.md "Icons are inline SVG". #}
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path d="M6 3.5h9l4.5 4.5V20a.5.5 0 0 1-.5.5H6a.5.5 0 0 1-.5-.5V4a.5.5 0 0 1 .5-.5Z"
+            stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/>
+      <path d="M15 3.5V8h4.5" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/>
+      <path d="M8.2 13.2 10.4 15l3.4-4" stroke="var(--accent)" stroke-width="1.8"
+            stroke-linecap="round" stroke-linejoin="round"/>
+    </svg>
+    halo&#8209;workbench
+  </a>
+  {# The other web UI on this box, ../drp-web. Points at its Tailscale Service name
+     rather than at evo-x3:8095 (2026-08-29): the VIP follows the service if it ever
+     moves to another machine, so this link does not go stale, and there is no port
+     for anyone to remember. Never a 100.x address -- a tailnet address returns
+     tailscaled's own 404 (halo-prep pitfall #33). #}
+  <a class="siblink" href="http://drp-web/">research&nbsp;&rarr;</a>
 </div></header>
 
 <div class="wrap">

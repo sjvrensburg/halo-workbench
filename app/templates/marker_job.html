@@ -1,16 +1,19 @@
 {% extends "base.html" %}
-{% block title %}{{ job.meta.input_filename or job.id }} — marker{% endblock %}
+{% block title %}{{ job.meta.input_filename or job.id }} — halo-workbench{% endblock %}
 {% block pagetitle %}Conversion{% endblock %}
 {% if job.status in ("queued", "running") %}
   {# Meta refresh, not JS polling: the page has no other client-side behaviour and
      this keeps working if the tab is restored hours later. #}
   <meta http-equiv="refresh" content="5">
 {% endif %}
-{% set page = "marker" %}
 {% block body %}
 <div class="card">
   <p><span class="status {{ job.status }}">{{ job.status }}</span>
      <code>{{ job.meta.input_filename or "—" }}</code></p>
+
+  {% if job.status in ("queued", "running") %}
+    <div class="track"><span></span></div>
+  {% endif %}
 
   {# Elapsed time is the most important thing on this page: concluding that a
      20-minute conversion has hung is the single most likely user error. #}
@@ -28,19 +31,19 @@
     {% endif %}
     <p class="muted">Nothing is offered for download. A conversion that did not pass
        the checks is not a smaller conversion — it is a different document.</p>
+    <p><a href="/marker" class="button secondary">Try another file</a></p>
   {% elif job.status == "done" %}
-    <p><a href="/marker/{{ job.id }}/download">Download {{ job.result.markdown_name }}</a>
-       <span class="muted">{{ job.result.markdown_bytes | filesize }}</span></p>
+    <p class="inline">
+      <a href="/marker/{{ job.id }}/download" class="button">Download {{ job.result.markdown_name }}</a>
+      <span class="muted">{{ job.result.markdown_bytes | filesize }}</span>
+    </p>
     {% if job.result.images %}
       <p><a href="/marker/{{ job.id }}/download.zip">Download .zip</a>
          <span class="muted">markdown + {{ job.result.images | length }} extracted image(s)</span></p>
     {% endif %}
     <p class="muted">Verified against marker's checksummed provenance sidecar, again
        just now, at download time.</p>
-    <form method="post" action="/marker/{{ job.id }}/redact" class="inline">
-      <button type="submit" class="secondary">Redact this markdown &rarr;</button>
-      <span class="muted">scans it for names, numbers and contact details — no download needed</span>
-    </form>
+    <p><a href="/marker">&larr; Convert another file</a></p>
   {% endif %}
 </div>
 

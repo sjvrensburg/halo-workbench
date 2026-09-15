@@ -1,20 +1,17 @@
-"""halo-workbench — specialist local-model tools over Tailscale.
+"""halo-workbench — PDF-to-markdown over Tailscale.
 
-Routing, config, the health check and the job queue's lifecycle. The tools themselves
-are PLAN.md phases 2, 4 and 5; each registers a handler with `app.jobs`.
+Routing, config, the health check and the job queue's lifecycle. Marker itself is
+PLAN.md phase 2; it registers its handler with `app.jobs`.
 """
 
 import logging
 from contextlib import asynccontextmanager
-from pathlib import Path
 
-from fastapi import FastAPI, Request
-from fastapi.responses import HTMLResponse
-from fastapi.staticfiles import StaticFiles
+from fastapi import FastAPI
+from fastapi.responses import RedirectResponse
 
-from app import config, hint_store, jobs, model_lease
-from app.tools import hint, marker, redact, regex, translate
-from app.views import templates
+from app import config, jobs
+from app.tools import marker
 
 
 @asynccontextmanager
@@ -37,49 +34,25 @@ async def lifespan(_: FastAPI):
         logging.getLogger("uvicorn.error").error("refusing to start — %s", exc)
         raise
 
-    # Owns nothing yet: it only ever stops a unit a job here started (app/model_lease.py).
-    model_lease.start()
-
-    # 7g: hint captures are retained 7 days now, in their own store -- see
-    # app/hint_store.py for why this is not just another jobs.py.
-    hint_store.start()
-
     try:
         yield
     finally:
         jobs.stop()
-        model_lease.stop()
-        hint_store.stop()
 
 
 app = FastAPI(title="halo-workbench", docs_url=None, redoc_url=None, lifespan=lifespan)
 
-# One router per tool, so a tool's routes, its job handler and its verifier stay in
-# one file. Importing the module is also what registers its handler with app.jobs.
 app.include_router(marker.router)
-app.include_router(redact.router)
-app.include_router(regex.router)
-app.include_router(translate.router)
-# The fifth page is deliberately not a fifth service: a port per tool means a
-# `tailscale serve` registration per tool, living outside this repo and invisible to
-# grep (CLAUDE.md "One port"). It also keeps :8097 and friends on loopback.
-app.include_router(hint.router)
-
-# Vendored assets only (currently: KaTeX for the hint page's math rendering, see
-# app/static/katex/VERSION). Not a build output and not user content -- no reason
-# for this to be anything but a plain directory mount.
-app.mount("/static", StaticFiles(directory=str(Path(__file__).parent / "static")),
-          name="static")
 
 
 @app.get("/healthz")
 def healthz() -> dict:
-    """Liveness only -- deliberately does not touch the model servers.
+    """Liveness only -- deliberately does not touch marker or the GPU.
 
-    systemd and `curl` from the laptop use this to answer "is the app up", which
-    must stay answerable while :8092 is busy with a Hermes turn. Model reachability
-    is a separate concern and belongs on the tool pages, where a stalled server is
-    the user's problem rather than the supervisor's.
+    systemd and `curl` from the laptop use this to answer "is the app up", which must
+    stay answerable while a conversion is mid-run. Whether marker itself is healthy is
+    a separate concern and belongs on `/marker`, where a stalled conversion is the
+    user's problem rather than the supervisor's.
     """
     return {
         "status": "ok",
@@ -90,7 +63,7 @@ def healthz() -> dict:
     }
 
 
-@app.get("/", response_class=HTMLResponse)
-def index(request: Request):
-    return templates.TemplateResponse(request, "index.html",
-                                      headers={"cache-control": "no-store"})
+@app.get("/")
+def index():
+    # One tool now -- a separate landing page is a click a user does not need.
+    return RedirectResponse("/marker")

@@ -1,16 +1,30 @@
 {% extends "base.html" %}
-{% block title %}marker — halo-workbench{% endblock %}
-{% block pagetitle %}PDF → markdown{% endblock %}
-{% set page = "marker" %}
+{% block title %}halo-workbench — PDF to markdown{% endblock %}
+{% block pagetitle %}PDF &rarr; markdown{% endblock %}
 {% block body %}
-<p>Upload a PDF, get markdown back. Conversion runs on the GPU one job at a time and
-a real paper can take <strong>up to ~20 minutes</strong> — the status page shows
-elapsed time so you can tell "slow" from "stuck".</p>
+<p class="lede">Upload a PDF, get markdown back — tables, headings and display math kept
+intact, checked against marker's own checksummed provenance sidecar before it is ever
+handed to you.</p>
 
-<form class="card" method="post" enctype="multipart/form-data" action="/marker">
-  <p><input type="file" name="file" accept="application/pdf,.pdf" required></p>
-  <p><button type="submit">Convert</button>
-     {% if queued %}<span class="muted">{{ queued }} job(s) ahead of you</span>{% endif %}</p>
+<form class="card" method="post" enctype="multipart/form-data" action="/marker" id="upload-form">
+  <label class="dropzone" for="file-input" id="dropzone">
+    <input type="file" name="file" id="file-input" accept="application/pdf,.pdf" required>
+    <svg width="30" height="30" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path d="M12 3.5v11M12 3.5 8 7.5M12 3.5l4 4" stroke="currentColor" stroke-width="1.7"
+            stroke-linecap="round" stroke-linejoin="round"/>
+      <path d="M4.5 15.5V19a1 1 0 0 0 1 1h13a1 1 0 0 0 1-1v-3.5" stroke="currentColor"
+            stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>
+    </svg>
+    <span class="dz-text"><strong>Drop a PDF here</strong> or click to browse</span>
+    <span class="dz-file muted" hidden></span>
+  </label>
+  <p class="inline">
+    <button type="submit" id="submit-btn">Convert</button>
+    {% if queued %}<span class="muted">{{ queued }} job(s) ahead of you</span>{% endif %}
+  </p>
+  <p class="muted" style="font-size:.9rem">Conversion runs on the GPU one job at a time.
+    A real paper can take <strong>up to ~20 minutes</strong> — the status page shows
+    elapsed time so you can tell "slow" from "stuck".</p>
 </form>
 
 {% if jobs %}
@@ -26,4 +40,53 @@ elapsed time so you can tell "slow" from "stuck".</p>
   {% endfor %}
 </table></div>
 {% endif %}
+
+<style>
+ .dropzone{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:.5rem;
+   text-align:center;padding:2.6rem 1.5rem;border:1.5px dashed var(--line);border-radius:var(--radius-sm);
+   background:var(--surface-2);color:var(--muted);cursor:pointer;transition:border-color .15s,background .15s}
+ .dropzone:hover{border-color:color-mix(in oklab,var(--accent) 45%,var(--line))}
+ .dropzone.drag{border-color:var(--accent);background:var(--accent-soft);color:var(--ink)}
+ .dropzone svg{color:var(--accent)}
+ .dropzone .dz-text strong{color:var(--ink)}
+ .dropzone input[type=file]{position:absolute;width:1px;height:1px;overflow:hidden;
+   clip:rect(0,0,0,0);white-space:nowrap;border:0}
+ .dz-file{word-break:break-all;max-width:32ch}
+</style>
+<script>
+ // Progressive enhancement only: the bare <input type=file required> inside the
+ // <label> already works with no JS at all -- this just adds drag-and-drop and the
+ // filename readout. Never trust drag data over the input's own .files.
+ (function(){
+   var zone = document.getElementById("dropzone");
+   var input = document.getElementById("file-input");
+   var submit = document.getElementById("submit-btn");
+   var text = zone.querySelector(".dz-text");
+   var fileLabel = zone.querySelector(".dz-file");
+
+   // Only disable-until-chosen when JS actually runs -- with JS off the plain
+   // <input required> still does its job and the button stays a normal submit.
+   submit.disabled = !input.files.length;
+
+   function showFile(file){
+     if (!file){ text.hidden = false; fileLabel.hidden = true; submit.disabled = true; return; }
+     text.hidden = true;
+     fileLabel.hidden = false;
+     fileLabel.textContent = file.name;
+     submit.disabled = false;
+   }
+   input.addEventListener("change", function(){ showFile(input.files[0]); });
+
+   ["dragenter","dragover"].forEach(function(evt){
+     zone.addEventListener(evt, function(e){ e.preventDefault(); zone.classList.add("drag"); });
+   });
+   ["dragleave","drop"].forEach(function(evt){
+     zone.addEventListener(evt, function(e){ e.preventDefault(); zone.classList.remove("drag"); });
+   });
+   zone.addEventListener("drop", function(e){
+     var files = e.dataTransfer && e.dataTransfer.files;
+     if (files && files.length){ input.files = files; showFile(files[0]); }
+   });
+ })();
+</script>
 {% endblock %}
