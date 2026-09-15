@@ -343,13 +343,30 @@ def _run(job_id: str) -> None:
         # A bug, not a tool outcome. The traceback goes in the job directory rather
         # than only the journal, so it is beside the job the operator is looking at --
         # and never into the status message, which the user reads.
-        job.path("error.log").write_text(traceback.format_exc())
-        _update(
-            job_id,
-            status=FAILED,
-            finished_at=_now(),
-            error="internal error — see error.log in the job directory",
-        )
+        #
+        # MEASURED 2026-09-15: the job directory can itself be gone by the time we get
+        # here (an operator deleted it, or pruning raced a job -- either way, the tool
+        # already hit that same FileNotFoundError once to land in this except clause).
+        # `write_text` on a missing directory raises again, and an exception raised
+        # while handling an exception is still an exception -- it escaped this function
+        # uncaught and killed the worker thread outright. Nothing restarts a dead
+        # Python thread, so every job submitted after that point queued forever with
+        # no error anywhere a user would see: `/healthz` stayed "ok" because the web
+        # server was fine, only the worker was gone. This block must never be the
+        # thing that takes the worker down, so its own bookkeeping is best-effort.
+        try:
+            job.path("error.log").write_text(traceback.format_exc())
+        except OSError:
+            log.warning("job %s: could not write error.log (job dir gone?)", job_id)
+        try:
+            _update(
+                job_id,
+                status=FAILED,
+                finished_at=_now(),
+                error="internal error — see error.log in the job directory",
+            )
+        except OSError:
+            log.warning("job %s: could not record failure (job dir gone?)", job_id)
         log.exception("job %s raised", job_id)
     else:
         _update(job_id, status=DONE, finished_at=_now())
@@ -364,6 +381,14 @@ def _worker_loop() -> None:
             continue
         try:
             _run(job_id)
+        except Exception:
+            # Last-resort net. _run already turns every job outcome, including its own
+            # bookkeeping failures, into a logged non-exception -- so reaching this is
+            # a bug in _run itself. Whatever it is, it must not be the reason this
+            # thread dies and the queue stops processing forever with no signal
+            # anywhere but the journal (see the comment above `except OSError` in
+            # _run). One bad job must cost at most that job, never the worker.
+            log.exception("job worker: _run(%s) raised past its own handling", job_id)
         finally:
             _QUEUE.task_done()
 
