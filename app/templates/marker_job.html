@@ -1,11 +1,17 @@
 {% extends "base.html" %}
 {% block title %}{{ job.meta.input_filename or job.id }} — halo-workbench{% endblock %}
 {% block pagetitle %}Conversion{% endblock %}
+{% block head_extra %}
 {% if job.status in ("queued", "running") %}
   {# Meta refresh, not JS polling: the page has no other client-side behaviour and
-     this keeps working if the tab is restored hours later. #}
+     this keeps working if the tab is restored hours later. Must live inside a block --
+     content outside a {% block %} in a child template that {% extends %} another is
+     silently dropped by Jinja2, never rendered. Found 2026-09-15: this tag sat between
+     two blocks, unrendered, and a running job's page simply never reloaded itself --
+     the exact "looks hung" failure this mechanism exists to prevent. #}
   <meta http-equiv="refresh" content="5">
 {% endif %}
+{% endblock %}
 {% block body %}
 <div class="card">
   <p><span class="status {{ job.status }}">{{ job.status }}</span>
