@@ -27,6 +27,8 @@ import os
 import re
 import shutil
 import subprocess
+import urllib.error
+import urllib.request
 import zipfile
 from pathlib import Path
 
@@ -38,6 +40,10 @@ from app.views import templates
 
 log = logging.getLogger(__name__)
 router = APIRouter()
+
+# app/tools/marker.py -> app/tools -> app -> repo root. Only used to put this repo on
+# PYTHONPATH for marker_single's own subprocess -- see `convert()`.
+_REPO_ROOT = Path(__file__).resolve().parents[2]
 
 # Read whole into memory (jobs.submit takes bytes), so it is capped. 200 MB is far
 # above any paper and still small next to the headroom this box needs: no swap, and
@@ -87,10 +93,42 @@ def _extra_args(params: dict) -> list[str]:
         args += ["--page_range", params["page_range"]]
     if params.get("force_ocr"):
         args.append("--force_ocr")
+    if params.get("llm_enhance"):
+        # Ornith-35B on :8088 (config.LLM_ENHANCE_ENDPOINT), OpenAI-compatible and
+        # already always running -- see config.py's comment for why this needs no
+        # on-demand start/stop. app.marker_services.OrnithService, not marker's stock
+        # OpenAIService, because Ornith performs best as a VLM with thinking off, and
+        # only honours that via chat_template_kwargs={"enable_thinking": false} on
+        # every request -- marker's own service has no way to send that, hence the
+        # subclass (see app/marker_services.py). Loaded by `marker_single` itself, in
+        # a different venv from this app's -- `convert()` puts this repo on that
+        # subprocess's PYTHONPATH so the import resolves.
+        # --openai_api_key is required by marker's OpenAIService (it builds an
+        # `openai` SDK client that refuses a None key) but llama-server does not check
+        # it -- any non-empty string satisfies both.
+        args += [
+            "--use_llm",
+            "--llm_service", "app.marker_services.OrnithService",
+            "--openai_base_url", f"{config.LLM_ENHANCE_ENDPOINT}/v1",
+            "--openai_model", config.LLM_ENHANCE_MODEL,
+            "--openai_api_key", "none",
+        ]
     return args
 
 
-def _validate_options(mode: str, page_range: str, force_ocr: bool) -> dict:
+def _llm_enhance_reachable() -> bool:
+    """A quick, short-timeout check -- not a guarantee, just an instant "no" instead
+    of a 20-minute job failing on the last mile because :8088 happened to be down.
+    marker itself still re-discovers any failure that happens after this point.
+    """
+    try:
+        urllib.request.urlopen(f"{config.LLM_ENHANCE_ENDPOINT}/health", timeout=2)
+        return True
+    except (urllib.error.URLError, OSError):
+        return False
+
+
+def _validate_options(mode: str, page_range: str, force_ocr: bool, llm_enhance: bool) -> dict:
     """Raises HTTPException(400) with a message the user can act on. Never trusts the
     mode string as anything but a fixed choice, and never forwards page_range to a
     subprocess without checking its shape first -- marker_single's own parser would
@@ -105,7 +143,20 @@ def _validate_options(mode: str, page_range: str, force_ocr: bool) -> dict:
             "page range must look like '0,5-10,20' -- comma-separated page numbers "
             "or ranges, 0-indexed",
         )
-    return {"mode": mode, "page_range": page_range, "force_ocr": force_ocr}
+    if llm_enhance and not _llm_enhance_reachable():
+        raise HTTPException(
+            400,
+            "LLM enhancement is unreachable right now — Ornith-35B "
+            f"({config.LLM_ENHANCE_ENDPOINT}) isn't answering. It's Open Notebook's "
+            "own resident worker and this app cannot start it; try again once it's up, "
+            "or convert without LLM enhancement.",
+        )
+    return {
+        "mode": mode,
+        "page_range": page_range,
+        "force_ocr": force_ocr,
+        "llm_enhance": llm_enhance,
+    }
 
 
 def _scope_unit(job_id: str) -> str:
@@ -232,7 +283,16 @@ def convert(job: jobs.Job) -> None:
     # would put the surya servers in the inner cgroup, which our startup reaper cannot
     # see -- so a `kill -9` of this service would strand exactly what all of this is
     # here to prevent. The scope has to belong to whoever outlives the job.
-    env = {**os.environ, "MARKER_RUN_SCOPE": "0"}
+    #
+    # PYTHONPATH: only needed when llm_enhance passes --llm_service
+    # app.marker_services.OrnithService (see _extra_args), but harmless to set always
+    # -- marker_single runs under ~/venvs/marker, a different interpreter from this
+    # app's, and would not otherwise find this repo's `app` package on sys.path.
+    env = {
+        **os.environ,
+        "MARKER_RUN_SCOPE": "0",
+        "PYTHONPATH": str(_REPO_ROOT),
+    }
 
     if shutil.which("systemd-run"):
         # A transient scope so every descendant lands in one cgroup we can empty
@@ -340,12 +400,13 @@ async def upload(
     mode: str = Form("fast"),
     page_range: str = Form(""),
     force_ocr: bool = Form(False),
+    llm_enhance: bool = Form(False),
 ):
     data = await file.read(MAX_UPLOAD_BYTES + 1)
     if len(data) > MAX_UPLOAD_BYTES:
         raise HTTPException(413, f"file is larger than {MAX_UPLOAD_BYTES // 1024 // 1024} MB")
 
-    params = _validate_options(mode, page_range, force_ocr)
+    params = _validate_options(mode, page_range, force_ocr, llm_enhance)
     job_id = jobs.submit("marker", params=params, upload=(file.filename or "upload.pdf", data))
     # 303: a reload of the status page must not repost the upload.
     return RedirectResponse(f"/marker/{job_id}", status_code=303)

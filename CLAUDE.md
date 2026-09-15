@@ -88,12 +88,21 @@ systemctl --user status halo-workbench          # and: journalctl --user -u halo
   servers behind otherwise), checks the output has markdown structure, and writes the
   checksummed `.marker-ok` sidecar. **The sidecar is the verifier** — `verify()` re-runs
   at download time so a `.md` edited after conversion stops being downloadable.
-  The upload form exposes three of `marker_single`'s many flags (mode, page range,
-  force OCR) — `_validate_options()` checks them at upload time rather than letting
-  marker_single's own parser reject a bad one 20 minutes into a job, and `_extra_args()`
-  only ever emits flags it already knows about, never a user string used as a flag
-  name. `marker_run.sh`'s sidecar records whichever mode actually ran (fixed
-  2026-09-15 in `../halo-prep`, alongside this) rather than a hardcoded `fast`.
+  The upload form exposes four of `marker_single`'s many flags (mode, page range,
+  force OCR, LLM enhancement) — `_validate_options()` checks them at upload time rather
+  than letting marker_single's own parser reject a bad one 20 minutes into a job, and
+  `_extra_args()` only ever emits flags it already knows about, never a user string
+  used as a flag name. `marker_run.sh`'s sidecar records whichever mode actually ran
+  (fixed 2026-09-15 in `../halo-prep`, alongside this) rather than a hardcoded `fast`.
+  LLM enhancement points marker's `--llm_service` at `app/marker_services.py`'s
+  `OrnithService` rather than a built-in one — Ornith-35B on `:8088` performs best as a
+  VLM with thinking off, and only honours that via `chat_template_kwargs:
+  {"enable_thinking": false}` on every request (confirmed live 2026-09-15: 54 completion
+  tokens / 187 reasoning chars without it, 2 / 0 with it), which marker's stock
+  `OpenAIService` has no way to send. That module is loaded by `marker_single` itself,
+  under `~/venvs/marker`'s interpreter — not this app's — so it must never import
+  anything needing fastapi, and `convert()` puts this repo on that subprocess's
+  `PYTHONPATH` so the import resolves at all.
 - `app/jobs.py` — the job store and the one worker thread. Tools register a handler
   with `@jobs.register("name")`; it either returns (`done`) or raises (`failed`). There
   is no third outcome on purpose — a result the verifier did not pass must raise.
@@ -149,6 +158,15 @@ pass, stop. Fail the job instead.
 - **Jobs are directories, not rows.** `~/.local/state/halo-workbench/jobs/<id>/`.
   Survives a restart, inspectable with `ls` and `cat` when a user reports something
   odd. Do not introduce a database.
+- **LLM enhancement uses `:8088` (Ornith-35B) because it is already always running,
+  and this app never starts or stops it.** It's Open Notebook's own resident worker,
+  gained vision 2026-09, and is not something this app manages the lifecycle of — the
+  old `MANAGED_UNITS`/on-demand-start mechanism was deleted with the other four tools
+  and is not coming back just for this. A job that asks for LLM enhancement queues
+  behind whatever Open Notebook is already doing on that port, same bargain as the
+  old `REPHRASE_ENDPOINT` when this app had a rewrite tool — accepted, not a bug. If
+  `:8088` is down, `_validate_options()` refuses the upload with a plain message
+  rather than letting a 20-minute job discover that at the end.
 
 ## Conventions
 

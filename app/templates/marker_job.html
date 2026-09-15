@@ -21,6 +21,7 @@
   {% if job.params.mode == "balanced" %}{% set _ = opts.append("balanced mode") %}{% endif %}
   {% if job.params.page_range %}{% set _ = opts.append("pages " + job.params.page_range) %}{% endif %}
   {% if job.params.force_ocr %}{% set _ = opts.append("force OCR") %}{% endif %}
+  {% if job.params.llm_enhance %}{% set _ = opts.append("LLM enhancement (Ornith-35B)") %}{% endif %}
   {% if opts %}<p class="muted" style="font-size:.9rem">{{ opts | join(" · ") }}</p>{% endif %}
 
   {% if job.status in ("queued", "running") %}
