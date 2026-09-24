@@ -150,7 +150,7 @@ pass, stop. Fail the job instead.
   `../halo-prep`). This box has **no swap** and OOM-kills under pressure — serialising
   is the cheap insurance.
 - **Never call `marker_single` directly.** Always
-  `../halo-prep/config/hermes/skills/productivity/ocr-and-documents/scripts/marker_run.sh`.
+  `../halo-prep/config/pi/skills/ocr-and-documents/scripts/marker_run.sh`.
   Its header comment documents two separate incidents where a substitute — first
   `pdftotext` output, then an LLM's own transcription — was written into marker's
   output path and went undetected. That script exists because prose in a skill file is
