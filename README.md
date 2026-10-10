@@ -1,7 +1,7 @@
 # halo-workbench
 
 [![marker ships a verifier](https://img.shields.io/badge/marker-ships_a_verifier-2f6f5b)](CLAUDE.md#the-rule-the-whole-project-is-organised-around)
-[![runs on](https://img.shields.io/badge/runs_on-EVO--X3_·_Strix_Halo-5a5750)](https://github.com/sjvrensburg/halo-prep)
+![runs on](https://img.shields.io/badge/runs_on-EVO--X3_·_Strix_Halo-5a5750)
 [![python](https://img.shields.io/badge/python-3.14_+_FastAPI-5a5750)](scripts/bootstrap.sh)
 [![access](https://img.shields.io/badge/access-tailnet_only-5a5750)](#run-it-resident--installed)
 
@@ -76,7 +76,8 @@ tagged box). The host must then be approved in the console before it serves anyt
 
 ## Related
 
-- `../halo-prep` — the runbook that built the box: model units, ports, pitfalls, and
+- halo-prep — the author's private runbook that built the box (references to it here are
+  provenance, not public): model units, ports, pitfalls, and
   `marker_run.sh`, the wrapper this app shells out to.
 - `../deep-research-podcast` — the other thing this box is genuinely good at.
 - `../drp-web` — its web interface, at `http://drp-web/` (a Tailscale Service; also
