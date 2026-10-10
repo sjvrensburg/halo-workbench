@@ -45,9 +45,9 @@ Environment=ROCBLAS_USE_HIPBLASLT=1
 
 # Vulkan, and not a judgement call: as of 2026-08-22 the ROCm trees compute garbage
 # on this GPU (upstream #27506, halo-prep pitfall #24).
-ExecStart=/home/stefan/src/llama.cpp/build-vulkan/bin/llama-server \
-  --model /home/stefan/models/glm-ocr/GLM-OCR-Q8_0.gguf \
-  --mmproj /home/stefan/models/glm-ocr/mmproj-GLM-OCR-Q8_0.gguf \
+ExecStart=%h/src/llama.cpp/build-vulkan/bin/llama-server \
+  --model %h/models/glm-ocr/GLM-OCR-Q8_0.gguf \
+  --mmproj %h/models/glm-ocr/mmproj-GLM-OCR-Q8_0.gguf \
   --host 127.0.0.1 \
   --port 8099 \
   --ctx-size 16384 \

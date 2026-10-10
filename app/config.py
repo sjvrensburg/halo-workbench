@@ -34,8 +34,10 @@ JOB_RETENTION_DAYS = 7
 # two incidents in two days where a substitute (pdftotext output, then an LLM's own
 # transcription) landed in marker's output path undetected.
 MARKER_RUN = Path(
-    "/home/stefan/Projects/halo-prep/config/pi/skills/"
-    "ocr-and-documents/scripts/marker_run.sh"
+    os.environ.get(
+        "WORKBENCH_MARKER_RUN",
+        Path.home() / "Projects/halo-prep/config/pi/skills/ocr-and-documents/scripts/marker_run.sh",
+    )
 )
 
 # ── Optional LLM enhancement (marker's --use_llm) ────────────────────────────
